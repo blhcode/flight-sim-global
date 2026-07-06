@@ -32,7 +32,19 @@ Click the 3D view after loading to focus keyboard controls.
 
 ## Deploy (GitHub Pages)
 
-Pushes to `main` build and deploy automatically via GitHub Actions. The repo contains **source only** (`src/`, `public/`, etc.) — not `dist/` or `node_modules/`.
+**Live site:** [blhcode.github.io/flight-sim-global](https://blhcode.github.io/flight-sim-global/) (built from the `gh-pages` branch)
+
+This repo is **source only** — no `dist/`, `node_modules/`, or secrets.
+
+To redeploy after changes:
+
+```bash
+npm run build
+cd dist && git init -b gh-pages && git add -A && git commit -m "Deploy" \
+  && git push -f https://github.com/blhcode/flight-sim-global.git HEAD:gh-pages
+```
+
+Optional: copy `docs/deploy-workflow.yml` to `.github/workflows/deploy.yml` and run `gh auth refresh -s workflow` for automatic deploys on push.
 
 ## Architecture
 
