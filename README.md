@@ -12,7 +12,7 @@ npm run dev
 
 Open the URL shown in the terminal (default `http://localhost:5173`). Enter an airport code (e.g. `YSSY`), click **Load terrain & fly**, then use the keyboard controls below.
 
-**Live demo:** [blhcode.github.io/flight-sim-global](https://blhcode.github.io/flight-sim-global/)
+**Live demo:** temporarily offline while a bug is fixed. Source remains at [github.com/blhcode/flight-sim-global](https://github.com/blhcode/flight-sim-global).
 
 ## Controls
 
