@@ -1,0 +1,26 @@
+node_modules/
+dist/
+.DS_Store
+*.local
+
+# Secrets & local config — never commit
+.env
+.env.*
+!.env.example
+credentials.json
+secrets.json
+*.pem
+id_rsa
+id_ed25519
+mcp.json
+.multicities.json
+
+# Editor / OS
+*.swp
+*.swo
+Thumbs.db
+
+# Test artifacts
+/tmp/
+playwright-report/
+test-results/

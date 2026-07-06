@@ -1,0 +1,149 @@
+* {
+  box-sizing: border-box;
+}
+
+html,
+body {
+  margin: 0;
+  width: 100%;
+  height: 100%;
+  overflow: hidden;
+  background: #0a1018;
+  font-family: 'DM Sans', system-ui, -apple-system, sans-serif;
+  color: #e8f0ff;
+}
+
+#app,
+.game-root {
+  position: relative;
+  width: 100%;
+  height: 100%;
+}
+
+.game-canvas {
+  display: block;
+  width: 100%;
+  height: 100%;
+  outline: none;
+}
+
+.game-canvas:focus-visible {
+  box-shadow: inset 0 0 0 2px rgba(90, 160, 255, 0.45);
+}
+
+.hud-canvas {
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  z-index: 2;
+}
+
+.spawn-panel,
+.loading-screen {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 10;
+  background: radial-gradient(ellipse at center, rgba(8, 14, 24, 0.55), rgba(4, 8, 14, 0.88));
+  backdrop-filter: blur(4px);
+}
+
+.spawn-panel.hidden,
+.loading-screen.hidden {
+  opacity: 0;
+  pointer-events: none;
+  transition: opacity 0.35s ease;
+}
+
+.spawn-card,
+.loading-card {
+  width: min(420px, 92vw);
+  padding: 1.75rem;
+  border-radius: 14px;
+  background: rgba(14, 22, 36, 0.95);
+  border: 1px solid rgba(120, 160, 220, 0.25);
+  box-shadow: 0 24px 60px rgba(0, 0, 0, 0.45);
+}
+
+.spawn-card h2,
+.loading-card h1 {
+  margin: 0 0 0.35rem;
+  font-size: 1.5rem;
+  font-weight: 600;
+}
+
+.spawn-sub {
+  margin: 0 0 1.25rem;
+  color: #9ab0cc;
+  font-size: 0.9rem;
+}
+
+.spawn-card label {
+  display: block;
+  margin-bottom: 0.75rem;
+  font-size: 0.8rem;
+  color: #b8c8e0;
+}
+
+.spawn-card input {
+  display: block;
+  width: 100%;
+  margin-top: 0.3rem;
+  padding: 0.55rem 0.65rem;
+  border-radius: 8px;
+  border: 1px solid rgba(120, 160, 220, 0.3);
+  background: rgba(6, 10, 18, 0.8);
+  color: #e8f0ff;
+  font-size: 0.95rem;
+}
+
+.spawn-row {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 0.75rem;
+}
+
+button.primary {
+  width: 100%;
+  margin-top: 0.5rem;
+  padding: 0.75rem;
+  border: none;
+  border-radius: 8px;
+  background: linear-gradient(135deg, #2a6fd4, #1a4f9a);
+  color: white;
+  font-size: 1rem;
+  font-weight: 600;
+  cursor: pointer;
+}
+
+button.primary:hover {
+  filter: brightness(1.08);
+}
+
+.spawn-hint {
+  margin: 1rem 0 0;
+  font-size: 0.72rem;
+  color: #7a90ac;
+  line-height: 1.45;
+}
+
+.loading-message {
+  color: #9ab0cc;
+  margin: 0.5rem 0 1rem;
+}
+
+.loading-bar {
+  height: 6px;
+  border-radius: 3px;
+  background: rgba(255, 255, 255, 0.08);
+  overflow: hidden;
+}
+
+.loading-bar-fill {
+  height: 100%;
+  width: 0%;
+  background: linear-gradient(90deg, #2a6fd4, #5aa0ff);
+  transition: width 0.3s ease;
+}

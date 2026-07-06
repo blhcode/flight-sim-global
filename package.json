@@ -1,0 +1,37 @@
+{
+  "name": "flight-sim-global",
+  "private": false,
+  "version": "0.0.0",
+  "type": "module",
+  "scripts": {
+    "dev": "vite",
+    "build": "tsc && vite build",
+    "preview": "vite preview",
+    "build:airports": "node scripts/build-airports.mjs",
+    "check:satellite": "node scripts/check-satellite.mjs",
+    "check:satellite-remote": "node scripts/check-satellite-remote.mjs",
+    "check:physics": "node scripts/check-physics.mjs",
+    "check:controls": "node scripts/check-controls.mjs",
+    "check:spawn": "node scripts/check-spawn.mjs",
+    "check:landing": "npx tsx scripts/check-landing.mjs",
+    "check:flare": "node scripts/check-flare-browser.mjs",
+    "check:flare-keys": "node scripts/check-flare-keys.mjs",
+    "check:pitch": "npx tsx scripts/check-pitch.mjs",
+    "check:roll": "npx tsx scripts/check-roll.mjs",
+    "check:turn": "npx tsx scripts/check-turn.mjs",
+    "check:taxi-pitch": "node scripts/check-taxi-pitch.mjs",
+    "check:shortcuts": "node scripts/check-browser-shortcuts.mjs",
+    "check:brakes": "node scripts/check-brakes.mjs",
+    "check:idle": "node scripts/check-idle-throttle.mjs",
+    "check:air-pitch": "npx tsx scripts/check-air-pitch.mjs"
+  },
+  "devDependencies": {
+    "typescript": "~6.0.2",
+    "vite": "^8.1.1"
+  },
+  "dependencies": {
+    "@types/three": "^0.185.0",
+    "three": "^0.183.1",
+    "three-tile": "^0.12.0"
+  }
+}
