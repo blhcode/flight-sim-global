@@ -55,8 +55,8 @@ function cameraMountsFromBounds(box: THREE.Box3): LoadedAircraftModel['cameraMou
   );
   const cockpitLook = new THREE.Vector3(
     size.x * 0.02,
-    box.max.y * 0.8,
-    box.min.z - size.z * 0.35,
+    box.max.y * 0.72,
+    box.min.z - size.z * 0.32,
   );
   const gear = new THREE.Vector3(
     -size.x * 0.22,

@@ -129,6 +129,20 @@ button.primary:hover {
   line-height: 1.45;
 }
 
+.spawn-error {
+  margin: 0.75rem 0 0;
+  padding: 0.55rem 0.75rem;
+  border-radius: 8px;
+  font-size: 0.85rem;
+  color: #ffb4b4;
+  background: rgba(180, 60, 60, 0.2);
+  border: 1px solid rgba(255, 120, 120, 0.35);
+}
+
+.spawn-error.hidden {
+  display: none;
+}
+
 .loading-message {
   color: #9ab0cc;
   margin: 0.5rem 0 1rem;

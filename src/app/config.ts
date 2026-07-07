@@ -22,10 +22,10 @@ export const defaultConfig: GameConfig = {
 export function qualitySettings(quality: QualityPreset) {
   switch (quality) {
     case 'low':
-      return { maxTileLevel: 14, shadows: false, fog: false };
+      return { maxTileLevel: 14, minTileLevel: 6, shadows: false, fog: false };
     case 'high':
-      return { maxTileLevel: 19, shadows: true, fog: false };
+      return { maxTileLevel: 19, minTileLevel: 10, shadows: true, fog: false };
     default:
-      return { maxTileLevel: 17, shadows: true, fog: false };
+      return { maxTileLevel: 17, minTileLevel: 8, shadows: true, fog: false };
   }
 }

@@ -22,7 +22,7 @@ export class SceneManager {
     this.renderer.setPixelRatio(Math.min(window.devicePixelRatio, quality === 'high' ? 2 : 1.5));
     this.renderer.outputColorSpace = THREE.SRGBColorSpace;
     this.renderer.toneMapping = THREE.ACESFilmicToneMapping;
-    this.renderer.toneMappingExposure = 1.05;
+    this.renderer.toneMappingExposure = 1.14;
     this.renderer.shadowMap.enabled = settings.shadows;
     this.renderer.shadowMap.type = THREE.PCFSoftShadowMap;
     setTileAnisotropy(this.renderer);

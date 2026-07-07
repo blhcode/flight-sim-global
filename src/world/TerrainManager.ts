@@ -2,8 +2,7 @@ import * as THREE from 'three';
 import * as tt from 'three-tile';
 import 'three-tile/plugin';
 import type { TextureMode } from './tileSources.ts';
-import { createDemSource, createImagerySource } from './tileSources.ts';
-import { enhanceTileTexture, getTileAnisotropy } from './configureTileRendering.ts';
+import { createDemSource, createImagerySources, currentSatelliteProviderName, satelliteLodThreshold, satellitePrimeLodThreshold } from './tileSources.ts';
 
 function nearestMeridian(lon: number): 0 | 90 | -90 {
   const options: (0 | 90 | -90)[] = [0, 90, -90];
@@ -59,7 +58,11 @@ export class TerrainManager {
     return this.textureMode;
   }
 
-  async loadAt(location: SpawnLocation, maxLevel: number): Promise<void> {
+  setUpdateInterval(ms: number): void {
+    if (this.map) this.map.updateInterval = ms;
+  }
+
+  async loadAt(location: SpawnLocation, maxLevel: number, minLevel = 8): Promise<void> {
     if (this.map) {
       this.group.remove(this.map);
       this.map.dispose();
@@ -67,21 +70,19 @@ export class TerrainManager {
     }
 
     this.spawn = location;
+    this.spawnGroundElevM = 0;
     this.map = tt.TileMap.create({
-      imgSource: createImagerySource(this.textureMode, maxLevel),
+      imgSource: createImagerySources(this.textureMode, maxLevel),
       demSource: createDemSource(maxLevel),
       lon0: nearestMeridian(location.lon),
-      minLevel: 2,
+      minLevel,
     });
-    this.map.maxThreads = 12;
-    this.map.LODThreshold = 2.4;
-    this.map.updateInterval = 35;
+    this.map.maxThreads = currentSatelliteProviderName() === 'google' ? 16 : 12;
+    this.map.LODThreshold = satelliteLodThreshold();
+    this.map.updateInterval = 16;
     this.map.rotateX(-Math.PI / 2);
     this.group.add(this.map);
 
-    this.map.addEventListener('tile-loaded', () => this.applyUnlitImagery());
-
-    // Anchor world so spawn is near local origin
     this.origin.copy(
       this.map.geo2world(new THREE.Vector3(location.lon, location.lat, 0)),
     );
@@ -90,48 +91,65 @@ export class TerrainManager {
     this.map.reload();
 
     const spawnXZ = this.geoToLocal(location.lat, location.lon, 0);
-    const groundY = this.sampleHeightAtGeo(location.lat, location.lon) || spawnXZ.y;
 
-    const primeCam = new THREE.PerspectiveCamera(60, 1, 0.5, 500_000);
-
-    // Low-altitude pass — loads high-zoom aerial tiles at the runway
-    primeCam.position.set(spawnXZ.x + 25, groundY + 28, spawnXZ.z + 25);
-    primeCam.lookAt(spawnXZ.x + 80, groundY, spawnXZ.z);
-    for (let i = 0; i < 16; i++) {
-      this.map.update(primeCam);
-      await new Promise((r) => setTimeout(r, 160));
-    }
-
-    // Mid-altitude pass — fills surrounding area
-    primeCam.position.set(spawnXZ.x, groundY + 350, spawnXZ.z + 180);
-    primeCam.lookAt(spawnXZ.x, groundY, spawnXZ.z);
-    for (let i = 0; i < 6; i++) {
-      this.map.update(primeCam);
-      await new Promise((r) => setTimeout(r, 120));
-    }
-
-    // Nadir pass — highest zoom satellite at the runway
-    primeCam.position.set(spawnXZ.x, groundY + 45, spawnXZ.z + 8);
-    primeCam.lookAt(spawnXZ.x, groundY, spawnXZ.z);
-    for (let i = 0; i < 8; i++) {
-      this.map.update(primeCam);
-      await new Promise((r) => setTimeout(r, 150));
-    }
-
-    this.applyUnlitImagery();
     this.spawnLocalGroundY = await this.waitForDemAt(
       location.lat,
       location.lon,
       location.altM,
     );
+    if (this.spawnLocalGroundY < 1 && location.altM > 3) {
+      this.spawnLocalGroundY = Math.max(0, location.altM - 3);
+      this.spawnGroundElevM = this.spawnLocalGroundY;
+    }
+    await this.primeImageryAt(spawnXZ, this.spawnLocalGroundY);
 
-    await new Promise((r) => setTimeout(r, 300));
+    // Final ground pass after imagery prime — DEM may have refined during prime.
+    const ground = this.resolveGroundHeight(location.lat, location.lon, location.altM);
+    this.spawnLocalGroundY = ground;
+    this.spawnGroundElevM = ground;
+
+    await this.waitForTileDetail(spawnXZ, ground, 12, 30_000);
   }
 
-  cycleTextureMode(maxLevel: number): void {
+  /** Block until high-zoom tiles are in the scene (or timeout). */
+  async waitForTileDetail(
+    focus: THREE.Vector3,
+    groundY: number,
+    minZ: number,
+    timeoutMs: number,
+  ): Promise<number> {
+    if (!this.map) return 0;
+    const savedInterval = this.map.updateInterval;
+    this.map.updateInterval = 0;
+
+    const primeCam = new THREE.PerspectiveCamera(60, 1, 0.5, 500_000);
+    const y = Number.isFinite(groundY) ? groundY : 0;
+    primeCam.position.set(focus.x, y + 15, focus.z + 6);
+    primeCam.lookAt(focus.x, y, focus.z);
+    primeCam.updateMatrixWorld(true);
+
+    const deadline = performance.now() + timeoutMs;
+    let maxZ = 0;
+    while (performance.now() < deadline) {
+      this.map.update(primeCam);
+      maxZ = 0;
+      this.map.traverse((o) => {
+        const parent = o.parent as { z?: number } | null;
+        if (!(o as THREE.Mesh).isMesh || parent?.z == null) return;
+        if (parent.z > maxZ) maxZ = parent.z;
+      });
+      if (maxZ >= minZ) break;
+      await new Promise((r) => setTimeout(r, 80));
+    }
+
+    this.map.updateInterval = savedInterval;
+    return maxZ;
+  }
+
+  cycleTextureMode(maxLevel: number, minLevel = 8): void {
     if (!this.spawn) return;
     this.textureMode = this.textureMode === 'satellite' ? 'roadmap' : 'satellite';
-    void this.loadAt(this.spawn, maxLevel);
+    void this.loadAt(this.spawn, maxLevel, minLevel);
   }
 
   /** Ground elevation (scene Y) at a lat/lon. */
@@ -159,52 +177,91 @@ export class TerrainManager {
   async waitForDemAt(lat: number, lon: number, fallbackAltM = 0): Promise<number> {
     if (!this.map) return this.resolveGroundHeight(lat, lon, fallbackAltM);
 
+    const savedInterval = this.map.updateInterval;
+    this.map.updateInterval = 0;
+
     const primeCam = new THREE.PerspectiveCamera(60, 1, 0.5, 500_000);
     const xz = this.geoToLocal(lat, lon, 0);
-    primeCam.position.set(xz.x + 30, 120, xz.z + 30);
+    primeCam.position.set(xz.x + 30, 200, xz.z + 30);
     primeCam.lookAt(xz.x, 0, xz.z);
+    primeCam.updateMatrixWorld(true);
 
-    for (let i = 0; i < 16; i++) {
+    for (let i = 0; i < 40; i++) {
       this.map.update(primeCam);
-      await new Promise((r) => setTimeout(r, 140));
+      await new Promise((r) => setTimeout(r, 80));
     }
+
+    this.map.updateInterval = savedInterval;
 
     const ground = this.resolveGroundHeight(lat, lon, fallbackAltM);
     this.spawnLocalGroundY = ground;
     return ground;
   }
 
+  /** Prime high-zoom satellite tiles at a map-local point (after DEM is ready). */
+  async primeImageryAt(focus: THREE.Vector3, groundY: number): Promise<void> {
+    if (!this.map) return;
+
+    const savedInterval = this.map.updateInterval;
+    const savedLod = this.map.LODThreshold;
+    this.map.updateInterval = 0;
+    this.map.LODThreshold = satellitePrimeLodThreshold();
+
+    const primeCam = new THREE.PerspectiveCamera(60, 1, 0.5, 500_000);
+    const y = Number.isFinite(groundY) ? groundY : this.sampleHeightAt(focus);
+
+    const prime = (px: number, py: number, pz: number, lx: number, ly: number, lz: number, n: number) => {
+      primeCam.position.set(px, py, pz);
+      primeCam.lookAt(lx, ly, lz);
+      primeCam.updateMatrixWorld(true);
+      for (let i = 0; i < n; i++) {
+        this.map!.update(primeCam);
+      }
+    };
+
+    for (let i = 0; i < 32; i++) {
+      prime(focus.x, y + 12, focus.z + 4, focus.x, y, focus.z, 1);
+      await new Promise((r) => setTimeout(r, 70));
+    }
+
+    const extra = currentSatelliteProviderName() === 'google' ? 20 : 0;
+    prime(focus.x + 20, y + 35, focus.z + 20, focus.x, y, focus.z, 14 + extra);
+    await new Promise((r) => setTimeout(r, 180));
+    prime(focus.x, y + 120, focus.z + 50, focus.x, y, focus.z, 10);
+    await new Promise((r) => setTimeout(r, 120));
+    prime(focus.x, y + 8, focus.z + 25, focus.x, y, focus.z, 12);
+    await new Promise((r) => setTimeout(r, 150));
+
+    this.map.updateInterval = savedInterval;
+    this.map.LODThreshold = savedLod;
+    this._primePending = false;
+  }
+
   private resolveGroundHeight(lat: number, lon: number, fallbackAltM: number): number {
     const runwayElev = fallbackAltM > 0 ? Math.max(0, fallbackAltM - 3) : 0;
     const raw = this.sampleHeightAtGeoRaw(lat, lon);
+    const dem = Math.abs(raw) < 0.5 ? 0 : raw;
 
-    // Trust airport elevation at spawn when DEM is missing or noticeably off
-    if (runwayElev > 0 && (raw === 0 || Math.abs(raw - runwayElev) > 12)) {
+    if (runwayElev > 0 && (dem === 0 || Math.abs(dem - runwayElev) > 12)) {
       this.spawnGroundElevM = runwayElev;
       return runwayElev;
     }
 
-    const ground = raw || runwayElev || this.spawnLocalGroundY;
+    const ground = dem || runwayElev || this.spawnLocalGroundY;
     this.spawnGroundElevM = ground;
     return ground;
   }
 
-  private readonly recenterThresholdM = 5_000;
-  private _primePending = false;
-
   /**
-   * Shift the tile map origin when the focus point drifts far from (0,0,0) on XZ.
-   * Y is left alone so repeated recenters don't stack vertical error in group.position.
-   * @returns XZ delta applied to scene objects, or null if no shift
+   * Shift the tile map origin when the focus drifts far from (0,0,0).
+   * @returns delta applied to scene objects, or null if no shift
    */
   recenterIfNeeded(focus: THREE.Vector3): THREE.Vector3 | null {
     if (!this.map) return null;
-    const xzDist = focus.x * focus.x + focus.z * focus.z;
-    if (xzDist < this.recenterThresholdM ** 2) return null;
+    if (focus.lengthSq() < this.recenterThresholdM ** 2) return null;
 
-    const shift = new THREE.Vector3(focus.x, 0, focus.z);
-    this.group.position.x -= shift.x;
-    this.group.position.z -= shift.z;
+    const shift = focus.clone();
+    this.group.position.sub(shift);
     this._primePending = true;
     return shift;
   }
@@ -213,15 +270,97 @@ export class TerrainManager {
   primeTilesAt(focus: THREE.Vector3, groundY?: number): void {
     if (!this.map) return;
     const y = groundY ?? this.sampleHeightAt(focus);
+    void this.primeImageryAt(focus, y);
+  }
+
+  private readonly recenterThresholdM = 4_000;
+  private _primePending = false;
+  private _viewDebounce: ReturnType<typeof setTimeout> | null = null;
+
+  /**
+   * Re-prime after camera mode changes. Debounced so rapid C C does not overlap primes.
+   */
+  onViewChanged(focus: THREE.Vector3, camera: THREE.Camera): Promise<void> {
+    if (!this.map) return Promise.resolve();
+    const f = focus.clone();
+    return new Promise((resolve) => {
+      if (this._viewDebounce) clearTimeout(this._viewDebounce);
+      this._viewDebounce = setTimeout(() => {
+        this._viewDebounce = null;
+        void this.runViewChanged(f, camera).then(resolve);
+      }, 300);
+    });
+  }
+
+  private async runViewChanged(focus: THREE.Vector3, camera: THREE.Camera): Promise<void> {
+    if (!this.map) return;
+    const groundY = this.sampleHeightAt(focus);
+    await this.refreshImageryLod(focus);
+    await this.primeImageryAlongView(focus, groundY, camera);
+    await this.waitForTileDetail(focus, groundY, 12, 25_000);
+  }
+
+  /** Prime nadir tiles along the chase-camera ground path (horizon view stays coarse otherwise). */
+  private async primeImageryAlongView(
+    focus: THREE.Vector3,
+    groundY: number,
+    camera: THREE.Camera,
+  ): Promise<void> {
+    if (!this.map) return;
+    const savedInterval = this.map.updateInterval;
+    const savedLod = this.map.LODThreshold;
+    this.map.updateInterval = 0;
+    this.map.LODThreshold = satellitePrimeLodThreshold();
+
     const primeCam = new THREE.PerspectiveCamera(60, 1, 0.5, 500_000);
-    primeCam.position.set(focus.x + 20, y + 35, focus.z + 20);
-    primeCam.lookAt(focus.x + 60, y, focus.z);
-    for (let i = 0; i < 14; i++) this.map.update(primeCam);
-    primeCam.position.set(focus.x, y + 55, focus.z + 6);
+    const y = Number.isFinite(groundY) ? groundY : 0;
+    const points: THREE.Vector3[] = [focus.clone()];
+
+    const dir = new THREE.Vector3();
+    camera.getWorldDirection(dir);
+    const camPos = camera.position;
+    if (dir.y < -0.02) {
+      const hitDist = (y - camPos.y) / dir.y;
+      if (hitDist > 0) {
+        for (const t of [0.2, 0.45, 0.7, 1]) {
+          points.push(camPos.clone().addScaledVector(dir, hitDist * t));
+        }
+      }
+    }
+
+    for (const pt of points) {
+      primeCam.position.set(pt.x, y + 18, pt.z);
+      primeCam.lookAt(pt.x, y, pt.z);
+      primeCam.updateMatrixWorld(true);
+      for (let i = 0; i < 24; i++) this.map.update(primeCam);
+      await new Promise((r) => setTimeout(r, 45));
+    }
+
+    this.map.updateInterval = savedInterval;
+    this.map.LODThreshold = savedLod;
+  }
+
+  /** Fast nadir LOD refresh after recenter (not full imagery re-download). */
+  private async refreshImageryLod(focus: THREE.Vector3): Promise<void> {
+    if (!this.map) return;
+    const savedInterval = this.map.updateInterval;
+    const savedLod = this.map.LODThreshold;
+    this.map.updateInterval = 0;
+    this.map.LODThreshold = satellitePrimeLodThreshold();
+
+    const primeCam = new THREE.PerspectiveCamera(60, 1, 0.5, 500_000);
+    const y = this.sampleHeightAt(focus);
+    primeCam.position.set(focus.x, y + 15, focus.z + 6);
     primeCam.lookAt(focus.x, y, focus.z);
-    for (let i = 0; i < 8; i++) this.map.update(primeCam);
-    this.applyUnlitImagery();
-    this._primePending = false;
+    primeCam.updateMatrixWorld(true);
+
+    for (let i = 0; i < 48; i++) {
+      this.map.update(primeCam);
+      await new Promise((r) => setTimeout(r, 40));
+    }
+
+    this.map.updateInterval = savedInterval;
+    this.map.LODThreshold = savedLod;
   }
 
   consumePrimePending(): boolean {
@@ -240,42 +379,21 @@ export class TerrainManager {
     return Math.hypot(dx, dy);
   }
 
-  update(camera: THREE.Camera): void {
+  update(camera: THREE.Camera, focus?: THREE.Vector3): void {
     if (!this.map) return;
-    this.map.update(camera);
-    if (this._unlitTick++ % 8 === 0) {
-      this.applyUnlitImagery();
-    }
+    this.map.update(this.lodCameraFor(camera, focus));
   }
 
-  private _unlitTick = 0;
+  private readonly lodCamera = new THREE.PerspectiveCamera(60, 1, 0.5, 500_000);
 
-  /** Replace lit terrain materials so satellite JPEGs are visible. */
-  private applyUnlitImagery(): void {
-    if (!this.map) return;
-    this.map.traverse((obj) => {
-      if (!(obj instanceof THREE.Mesh)) return;
-      const materials = Array.isArray(obj.material) ? obj.material : [obj.material];
-      let changed = false;
-      const next = materials.map((mat) => {
-        if (mat.map) enhanceTileTexture(mat.map, getTileAnisotropy());
-        if (mat instanceof THREE.MeshBasicMaterial) return mat;
-        if (!(mat instanceof THREE.MeshStandardMaterial) || !mat.map) return mat;
-        changed = true;
-        enhanceTileTexture(mat.map, getTileAnisotropy());
-        const basic = new THREE.MeshBasicMaterial({
-          map: mat.map,
-          side: THREE.FrontSide,
-          transparent: mat.transparent,
-          opacity: mat.opacity,
-        });
-        mat.dispose();
-        return basic;
-      });
-      if (changed) {
-        obj.material = Array.isArray(obj.material) ? next : next[0];
-      }
-    });
+  private lodCameraFor(viewCamera: THREE.Camera, focus?: THREE.Vector3): THREE.Camera {
+    if (!focus) return viewCamera;
+    const groundY = this.sampleHeightAt(focus);
+    // Always use nadir LOD at the aircraft — chase/outside cameras pitch up and merge ground tiles.
+    this.lodCamera.position.set(focus.x, groundY + 0.5, focus.z);
+    this.lodCamera.lookAt(focus.x, groundY, focus.z);
+    this.lodCamera.updateMatrixWorld(true);
+    return this.lodCamera;
   }
 
   /** Geographic → scene coordinates (group offset keeps values near the spawn). */
@@ -290,7 +408,6 @@ export class TerrainManager {
     if (this.spawn && this.spawnGroundElevM > 0) {
       const geo = this.map.world2geo(localPos.clone());
       const dist = this.approxDistM(geo.y, geo.x, this.spawn.lat, this.spawn.lon);
-      // Only flatten bad DEM at the airport — not across the whole 4 km tile radius
       if (
         dist < 900 &&
         (raw === 0 || Math.abs(raw - this.spawnGroundElevM) > 35)
@@ -305,11 +422,17 @@ export class TerrainManager {
     if (!this.map) return 0;
     const geo = this.map.world2geo(localPos.clone());
     const info = this.map.getLocalInfoFromGeo(geo);
-    if (info?.point) return info.point.y;
+    if (info?.point) {
+      const y = info.point.y;
+      return Math.abs(y) < 0.5 ? 0 : y;
+    }
 
     const probe = new THREE.Vector3(localPos.x, localPos.y + 50_000, localPos.z);
     const hit = this.map.getLocalInfoFromWorld(probe);
-    if (hit?.point) return hit.point.y;
+    if (hit?.point) {
+      const y = hit.point.y;
+      return Math.abs(y) < 0.5 ? 0 : y;
+    }
     return 0;
   }
 

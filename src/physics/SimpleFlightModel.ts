@@ -208,11 +208,15 @@ export class SimpleFlightModel {
     this.lastGroundSamplePos.copy(state.position);
 
     const sampledGroundY = groundHeightAt(state.position);
+    const speed = state.velocity.length();
     if (this.groundYFiltered === null) {
       this.groundYFiltered = sampledGroundY;
     } else {
       const delta = sampledGroundY - this.groundYFiltered;
-      const slew = Math.max(18 * dt, 0.35);
+      const onGroundEarly = state.position.y - this.groundYFiltered - params.gearOffsetM < 0.35;
+      const slew = onGroundEarly && speed < 10
+        ? Math.max(0.8 * dt, 0.02)
+        : Math.max(18 * dt, 0.35);
       this.groundYFiltered += THREE.MathUtils.clamp(delta, -slew, slew);
     }
     const groundY = this.groundYFiltered;
@@ -222,7 +226,6 @@ export class SimpleFlightModel {
 
     const rho = isaRho(Math.max(0, groundY + agl));
     const rho0 = 1.225;
-    const speed = state.velocity.length();
     const bodySpeed = state.velocity.dot(_forward);
     const iasBase = Math.max(bodySpeed, speed * 0.55);
     const iasMs = Math.max(0, iasBase * Math.sqrt(rho / rho0));
@@ -444,7 +447,12 @@ export class SimpleFlightModel {
     const groundY2 = groundHeightAt(state.position);
     if (this.groundYFiltered !== null) {
       const delta2 = groundY2 - this.groundYFiltered;
-      const slew = Math.max(18 * dt, 0.35);
+      const postSpeed = state.velocity.length();
+      const onGroundLate =
+        state.position.y - this.groundYFiltered - params.gearOffsetM < 0.35;
+      const slew = onGroundLate && postSpeed < 10
+        ? Math.max(0.8 * dt, 0.02)
+        : Math.max(18 * dt, 0.35);
       this.groundYFiltered += THREE.MathUtils.clamp(delta2, -slew, slew);
     }
     const minY = this.groundYFiltered! + params.gearOffsetM;
@@ -479,6 +487,9 @@ export class SimpleFlightModel {
             const dV = Math.min(Math.abs(vFwd), brakeDecel * dt);
             state.velocity.sub(_fwdGround.multiplyScalar(sign * dV));
           }
+        } else if (controls.throttle <= 0.12 && speed < 1.8) {
+          const idleDamp = Math.pow(0.88, dt * 60);
+          state.velocity.multiplyScalar(idleDamp);
         }
       }
     }

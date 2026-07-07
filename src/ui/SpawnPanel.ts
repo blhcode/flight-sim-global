@@ -1,5 +1,6 @@
 import airports from '../data/airports.json';
 import { geocode } from '../world/Geocoder.ts';
+import { parseCoordinate } from '../world/parseCoordinate.ts';
 
 export interface SpawnRequest {
   lat: number;
@@ -22,10 +23,20 @@ interface AirportRecord {
 
 const airportList = airports as AirportRecord[];
 
+function lookupAirport(code: string): AirportRecord | undefined {
+  const q = code.trim().toUpperCase();
+  if (!q) return undefined;
+  return (
+    airportList.find((a) => a.iata === q) ??
+    airportList.find((a) => a.icao === q)
+  );
+}
+
 export class SpawnPanel {
   readonly element: HTMLElement;
   private onSpawn: ((req: SpawnRequest) => void) | null = null;
   private visible = true;
+  private errorEl: HTMLElement | null = null;
 
   constructor(container: HTMLElement) {
     this.element = document.createElement('div');
@@ -35,34 +46,47 @@ export class SpawnPanel {
         <h2>Flight Sim Global</h2>
         <p class="spawn-sub">Real-world terrain · Cessna 172SP</p>
         <label>Airport ICAO / IATA
-          <input type="text" id="spawn-icao" placeholder="YSSY" value="YSSY" maxlength="4" />
+          <input type="text" id="spawn-icao" placeholder="YSSY or YWVA" value="YSSY" maxlength="4" autocapitalize="characters" />
         </label>
         <label>Or search place
           <input type="text" id="spawn-search" placeholder="Sydney Airport" />
         </label>
         <div class="spawn-row">
-          <label>Lat <input type="number" id="spawn-lat" step="0.0001" /></label>
-          <label>Lon <input type="number" id="spawn-lon" step="0.0001" /></label>
+          <label>Lat <input type="text" id="spawn-lat" placeholder="-33.87 or 33°15'20.6&quot;S" spellcheck="false" /></label>
+          <label>Lon <input type="text" id="spawn-lon" placeholder="151.43 or 151°25'54.6&quot;E" spellcheck="false" /></label>
         </div>
         <label>Heading ° <input type="number" id="spawn-hdg" value="160" min="0" max="359" /></label>
+        <p id="spawn-error" class="spawn-error hidden" role="alert"></p>
         <button type="button" id="spawn-go" class="primary">Load terrain & fly</button>
-        <p class="spawn-hint">Click the view after loading to focus controls. W/S pitch · A/D roll · Q/E yaw · ↑/↓ throttle · C camera · T texture</p>
+        <p class="spawn-hint">ICAO/IATA or lat/lon — clear the airport code to spawn by coordinates. W/S pitch · A/D roll · Q/E yaw · ↑/↓ throttle</p>
       </div>
     `;
     container.appendChild(this.element);
+    this.errorEl = this.element.querySelector('#spawn-error');
 
     const icaoInput = this.element.querySelector('#spawn-icao') as HTMLInputElement;
-    icaoInput.addEventListener('change', () => this.fillFromIcao(icaoInput.value));
+    const latInput = this.element.querySelector('#spawn-lat') as HTMLInputElement;
+    const lonInput = this.element.querySelector('#spawn-lon') as HTMLInputElement;
+
+    icaoInput.addEventListener('change', () => this.applyIcao(icaoInput.value));
+    icaoInput.addEventListener('keydown', (e) => {
+      if ((e as KeyboardEvent).key === 'Enter') this.applyIcao(icaoInput.value);
+    });
+
+    const markManualCoords = () => {
+      icaoInput.value = '';
+      (this.element.querySelector('#spawn-search') as HTMLInputElement).value = '';
+      this.clearError();
+    };
+    latInput.addEventListener('input', markManualCoords);
+    lonInput.addEventListener('input', markManualCoords);
 
     this.element.querySelector('#spawn-go')?.addEventListener('click', () => void this.submit());
     this.element.querySelector('#spawn-search')?.addEventListener('keydown', (e) => {
       if ((e as KeyboardEvent).key === 'Enter') void this.searchPlace();
     });
-    this.element.querySelector('#spawn-icao')?.addEventListener('keydown', (e) => {
-      if ((e as KeyboardEvent).key === 'Enter') this.fillFromIcao((e.target as HTMLInputElement).value);
-    });
 
-    this.fillFromIcao('YSSY');
+    this.applyIcao('YSSY');
   }
 
   setOnSpawn(cb: (req: SpawnRequest) => void): void {
@@ -86,45 +110,102 @@ export class SpawnPanel {
     return this.visible;
   }
 
-  private fillFromIcao(code: string): void {
-    const q = code.trim().toUpperCase();
-    const ap =
-      airportList.find((a) => a.iata === q) ??
-      airportList.find((a) => a.icao === q);
-    if (!ap) return;
+  private showError(msg: string): void {
+    if (!this.errorEl) return;
+    this.errorEl.textContent = msg;
+    this.errorEl.classList.remove('hidden');
+  }
+
+  private clearError(): void {
+    this.errorEl?.classList.add('hidden');
+  }
+
+  /** Fill lat/lon from airport code (live preview). */
+  private applyIcao(code: string): boolean {
+    const ap = lookupAirport(code);
+    if (!ap) {
+      if (code.trim()) {
+        this.showError(`Unknown airport code: ${code.trim().toUpperCase()}`);
+      }
+      return false;
+    }
+    this.clearError();
     (this.element.querySelector('#spawn-lat') as HTMLInputElement).value = String(ap.lat);
     (this.element.querySelector('#spawn-lon') as HTMLInputElement).value = String(ap.lon);
     (this.element.querySelector('#spawn-search') as HTMLInputElement).value =
-      `${ap.name}, ${ap.city}`;
+      `${ap.name}${ap.city ? `, ${ap.city}` : ''}`;
+    return true;
   }
 
   private async searchPlace(): Promise<void> {
     const q = (this.element.querySelector('#spawn-search') as HTMLInputElement).value;
     if (!q.trim()) return;
     const result = await geocode(q);
-    if (!result) return;
+    if (!result) {
+      this.showError(`Could not find: ${q}`);
+      return;
+    }
+    this.clearError();
+    (this.element.querySelector('#spawn-icao') as HTMLInputElement).value = '';
     (this.element.querySelector('#spawn-lat') as HTMLInputElement).value = String(result.lat);
     (this.element.querySelector('#spawn-lon') as HTMLInputElement).value = String(result.lon);
+    (this.element.querySelector('#spawn-search') as HTMLInputElement).value = result.displayName;
   }
 
-  private async submit(): Promise<void> {
+  private resolveSpawn(): SpawnRequest | null {
     const icaoInput = this.element.querySelector('#spawn-icao') as HTMLInputElement;
-    if (icaoInput.value.trim()) this.fillFromIcao(icaoInput.value);
+    const code = icaoInput.value.trim();
 
-    const lat = parseFloat((this.element.querySelector('#spawn-lat') as HTMLInputElement).value);
-    const lon = parseFloat((this.element.querySelector('#spawn-lon') as HTMLInputElement).value);
-    const headingDeg = parseFloat((this.element.querySelector('#spawn-hdg') as HTMLInputElement).value) || 0;
+    if (code) {
+      const ap = lookupAirport(code);
+      if (!ap) {
+        this.showError(`Unknown airport code: ${code.toUpperCase()}`);
+        return null;
+      }
+      const headingDeg =
+        parseFloat((this.element.querySelector('#spawn-hdg') as HTMLInputElement).value) || 0;
+      return {
+        lat: ap.lat,
+        lon: ap.lon,
+        altM: ap.elevM + 3,
+        headingDeg,
+        label: `${ap.name}${ap.city ? `, ${ap.city}` : ''}`,
+      };
+    }
+
+    const latRaw = (this.element.querySelector('#spawn-lat') as HTMLInputElement).value;
+    const lonRaw = (this.element.querySelector('#spawn-lon') as HTMLInputElement).value;
+    const lat = parseCoordinate(latRaw, 'lat');
+    const lon = parseCoordinate(lonRaw, 'lon');
+    const headingDeg =
+      parseFloat((this.element.querySelector('#spawn-hdg') as HTMLInputElement).value) || 0;
     const label =
       (this.element.querySelector('#spawn-search') as HTMLInputElement).value ||
-      `${lat.toFixed(4)}, ${lon.toFixed(4)}`;
+      (lat != null && lon != null
+        ? `${lat.toFixed(4)}, ${lon.toFixed(4)}`
+        : `${latRaw}, ${lonRaw}`);
 
-    if (!Number.isFinite(lat) || !Number.isFinite(lon)) return;
+    if (lat == null) {
+      this.showError('Enter a valid latitude (decimal or DMS, e.g. 33°15\'20.6"S).');
+      return null;
+    }
+    if (lon == null) {
+      this.showError('Enter a valid longitude (decimal or DMS, e.g. 151°25\'54.6"E).');
+      return null;
+    }
 
+    this.clearError();
     const ap = airportList.find(
       (a) => Math.abs(a.lat - lat) < 0.01 && Math.abs(a.lon - lon) < 0.01,
     );
     const altM = (ap?.elevM ?? 0) + 3;
 
-    this.onSpawn?.({ lat, lon, altM, headingDeg, label });
+    return { lat, lon, altM, headingDeg, label };
+  }
+
+  private async submit(): Promise<void> {
+    const req = this.resolveSpawn();
+    if (!req) return;
+    this.onSpawn?.(req);
   }
 }

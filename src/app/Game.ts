@@ -12,6 +12,7 @@ import { InstrumentPanel } from '../hud/InstrumentPanel.ts';
 import { EngineAudio } from '../audio/EngineAudio.ts';
 import { LoadingScreen } from '../ui/LoadingScreen.ts';
 import { SpawnPanel, type SpawnRequest } from '../ui/SpawnPanel.ts';
+import type { TileMap } from 'three-tile';
 
 export type GamePhase = 'menu' | 'loading' | 'flying';
 
@@ -35,6 +36,7 @@ export class Game {
   private lastTime = 0;
   private rafId = 0;
   private maxTileLevel = defaultConfig.maxTileLevel;
+  private terrainWarmupFrames = 0;
 
   constructor(container: HTMLElement) {
     container.innerHTML = '';
@@ -100,7 +102,7 @@ export class Game {
       label: req.label,
     };
 
-    await this.terrain.loadAt(location, this.maxTileLevel);
+    await this.terrain.loadAt(location, this.maxTileLevel, settings.minTileLevel);
     this.loadingScreen.setProgress(0.5);
     this.loadingScreen.setMessage('Loading aircraft…');
 
@@ -121,7 +123,9 @@ export class Game {
     );
     this.aircraft.spawn(worldPos, req.headingDeg);
 
-    this.terrain.update(this.sceneManager.camera);
+    this.cameraRig = new CameraRig(this.sceneManager.camera, def);
+    this.cameraRig.snapCamera();
+
     const snapped = this.terrain.spawnPosition(
       req.lat,
       req.lon,
@@ -130,20 +134,68 @@ export class Game {
     );
     this.aircraft.respawnAt(snapped, req.headingDeg);
 
-    this.cameraRig = new CameraRig(this.sceneManager.camera, def);
+    for (let i = 0; i < 8; i++) {
+      this.terrain.update(this.sceneManager.camera, snapped);
+      await new Promise((r) => setTimeout(r, 40));
+    }
+
+    const seated = this.terrain.spawnPosition(
+      req.lat,
+      req.lon,
+      this.aircraft.definition.gearOffsetM,
+      req.altM,
+    );
+    this.aircraft.respawnAt(seated, req.headingDeg);
     this.cameraRig.snapCamera();
+
     this.flightControls = new FlightControls(
       this.input,
       this.aircraft,
-      () => this.cameraRig?.cycleMode(),
+      () => {
+        this.cameraRig?.cycleMode();
+        const mode = this.cameraRig?.mode;
+        if (this.aircraft && mode === 'outside') {
+          this.loadingScreen.setMessage('Loading satellite detail…');
+          this.loadingScreen.show();
+          void this.terrain
+            .onViewChanged(this.aircraft.root.position, this.sceneManager.camera)
+            .then(() => {
+              const spawn = this.terrain.currentSpawn;
+              if (spawn && this.aircraft) {
+                const seated = this.terrain.spawnPosition(
+                  spawn.lat,
+                  spawn.lon,
+                  this.aircraft.definition.gearOffsetM,
+                  spawn.altM,
+                );
+                this.aircraft.respawnAt(seated, spawn.headingDeg);
+                this.cameraRig?.snapCamera();
+              }
+              this.loadingScreen.hide();
+            });
+        } else if (this.aircraft) {
+          void this.terrain.onViewChanged(
+            this.aircraft.root.position,
+            this.sceneManager.camera,
+          );
+        }
+      },
       () => this.terrain.cycleTextureMode(this.maxTileLevel),
     );
 
     await this.audio.init();
+    this.loadingScreen.setMessage('Loading satellite detail…');
+    this.loadingScreen.setProgress(0.85);
+    const spawnXZ = this.terrain.scenePositionForGeo(req.lat, req.lon, 0);
+    const groundY = this.terrain.sampleHeightAtGeo(req.lat, req.lon);
+    await this.terrain.waitForTileDetail(spawnXZ, groundY, 12, 45_000);
     this.loadingScreen.setProgress(1);
     this.loadingScreen.hide();
     this.phase = 'flying';
     this.input.setFlying(true);
+    this.terrainWarmupFrames = 120;
+    this.terrain.setUpdateInterval(0);
+    if (this.aircraft) this.aircraft.controls.throttle = 0.1;
   }
 
   private loop(now: number): void {
@@ -161,18 +213,26 @@ export class Game {
         this.physicsAccumulator -= PHYSICS_DT;
       }
 
-      const shift = this.terrain.recenterIfNeeded(this.aircraft.root.position);
-      if (shift && this.aircraft.body) {
-        this.aircraft.root.position.x -= shift.x;
-        this.aircraft.root.position.z -= shift.z;
-        this.aircraft.body.state.position.x -= shift.x;
-        this.aircraft.body.state.position.z -= shift.z;
-        this.aircraft.body.resetGroundContact();
-        this.terrain.primeTilesAt(this.aircraft.root.position);
-      }
+    const shift = this.terrain.recenterIfNeeded(this.aircraft.root.position);
+    if (shift && this.aircraft.body) {
+      this.aircraft.root.position.sub(shift);
+      this.aircraft.body.state.position.sub(shift);
+      this.aircraft.body.resetGroundContact();
+      this.terrain.primeTilesAt(this.aircraft.root.position);
+    }
 
-      this.cameraRig.update(this.aircraft.root, this.aircraft.visualModel);
-      this.terrain.update(this.sceneManager.camera);
+      this.cameraRig.update(this.aircraft.root, this.aircraft.visualModel, {
+        dt,
+        onGround: this.aircraft.onGround,
+        speedKts: this.aircraft.getTelemetry().airspeedKts,
+      });
+      this.terrain.update(this.sceneManager.camera, this.aircraft.root.position);
+      if (this.terrainWarmupFrames > 0) {
+        this.terrainWarmupFrames--;
+        if (this.terrainWarmupFrames === 0) {
+          this.terrain.setUpdateInterval(16);
+        }
+      }
       if (this.terrain.consumePrimePending()) {
         this.terrain.primeTilesAt(this.aircraft.root.position);
       }
@@ -203,9 +263,18 @@ export class Game {
     );
   }
 
-  /** Test / automation — loading finished and sim is running. */
+  /** Test / automation — loading finished, sim running, and satellite detail is present. */
   isFlightReady(): boolean {
-    return this.phase === 'flying' && this.aircraft?.body != null;
+    if (this.phase !== 'flying' || !this.aircraft?.body) return false;
+    const map = this.terrain.tileMap;
+    if (!map) return false;
+    let maxZ = 0;
+    map.traverse((o) => {
+      const parent = o.parent as { z?: number } | null;
+      if (!(o as THREE.Mesh).isMesh || parent?.z == null) return;
+      if (parent.z > maxZ) maxZ = parent.z;
+    });
+    return maxZ >= 10;
   }
 
   /** Test / automation — nose pitch & bank from body quaternion (gimbal-safe). */
@@ -238,6 +307,57 @@ export class Game {
   }): void {
     if (!this.aircraft) return;
     Object.assign(this.aircraft.controls, partial);
+  }
+
+  /** Test / automation — cycle chase / cockpit camera */
+  cycleCamera(): string | null {
+    const mode = this.cameraRig?.cycleMode() ?? null;
+    if (this.aircraft) {
+      void this.terrain.onViewChanged(
+        this.aircraft.root.position,
+        this.sceneManager.camera,
+      );
+    }
+    return mode;
+  }
+
+  /** Test / automation — cockpit → outside and wait for tile re-prime */
+  async cycleToOutsideCam(): Promise<void> {
+    this.cameraRig?.cycleMode();
+    this.cameraRig?.cycleMode();
+    this.cameraRig?.snapCamera();
+    if (this.aircraft) {
+      await this.terrain.onViewChanged(
+        this.aircraft.root.position,
+        this.sceneManager.camera,
+      );
+      const spawn = this.terrain.currentSpawn;
+      if (spawn) {
+        const seated = this.terrain.spawnPosition(
+          spawn.lat,
+          spawn.lon,
+          this.aircraft.definition.gearOffsetM,
+          spawn.altM,
+        );
+        this.aircraft.respawnAt(seated, spawn.headingDeg);
+        this.cameraRig?.snapCamera();
+      }
+    }
+  }
+
+  getCamera(): { x: number; y: number; z: number } {
+    const p = this.sceneManager.camera.position;
+    return { x: p.x, y: p.y, z: p.z };
+  }
+
+  getAircraftPos(): { x: number; y: number; z: number } | null {
+    const p = this.aircraft?.root.position;
+    return p ? { x: p.x, y: p.y, z: p.z } : null;
+  }
+
+  /** Test / automation — tile map for material diagnostics */
+  getTileMap(): TileMap | null {
+    return this.terrain.tileMap;
   }
 
   /** Test / automation — spawn ground debug */
@@ -281,15 +401,13 @@ export class Game {
     this.aircraft.respawnAt(pos, headingDeg);
     const shift = this.terrain.recenterIfNeeded(this.aircraft.root.position);
     if (shift && this.aircraft.body) {
-      this.aircraft.root.position.x -= shift.x;
-      this.aircraft.root.position.z -= shift.z;
-      this.aircraft.body.state.position.x -= shift.x;
-      this.aircraft.body.state.position.z -= shift.z;
+      this.aircraft.root.position.sub(shift);
+      this.aircraft.body.state.position.sub(shift);
       this.aircraft.body.resetGroundContact();
     }
     this.terrain.primeTilesAt(this.aircraft.root.position);
     this.cameraRig?.snapCamera();
-    this.terrain.update(this.sceneManager.camera);
+    this.terrain.update(this.sceneManager.camera, this.aircraft.root.position);
   }
 
   /** Test / automation — advance physics without relying on rAF */

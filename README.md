@@ -12,7 +12,7 @@ npm run dev
 
 Open the URL shown in the terminal (default `http://localhost:5173`). Enter an airport code (e.g. `YSSY`), click **Load terrain & fly**, then use the keyboard controls below.
 
-**Live demo:** temporarily offline while a bug is fixed. Source remains at [github.com/blhcode/flight-sim-global](https://github.com/blhcode/flight-sim-global).
+**Live demo:** [blhcode.github.io/flight-sim-global](https://blhcode.github.io/flight-sim-global/)
 
 ## Controls
 
@@ -32,11 +32,11 @@ Click the 3D view after loading to focus keyboard controls.
 
 ## Deploy (GitHub Pages)
 
-**Live site:** [blhcode.github.io/flight-sim-global](https://blhcode.github.io/flight-sim-global/) (built from the `gh-pages` branch)
+**Live site:** [blhcode.github.io/flight-sim-global](https://blhcode.github.io/flight-sim-global/)
 
-This repo is **source only** — no `dist/`, `node_modules/`, or secrets.
+Pushes to `main` can deploy automatically if you copy [`docs/deploy-workflow.yml`](docs/deploy-workflow.yml) to `.github/workflows/deploy.yml` (requires `workflow` OAuth scope on push).
 
-To redeploy after changes:
+Manual deploy (replaces any old `gh-pages` branch content):
 
 ```bash
 npm run build
@@ -44,7 +44,7 @@ cd dist && git init -b gh-pages && git add -A && git commit -m "Deploy" \
   && git push -f https://github.com/blhcode/flight-sim-global.git HEAD:gh-pages
 ```
 
-Optional: copy `docs/deploy-workflow.yml` to `.github/workflows/deploy.yml` and run `gh auth refresh -s workflow` for automatic deploys on push.
+This repo is **source only** — no `dist/`, `node_modules/`, or secrets.
 
 ## Architecture
 

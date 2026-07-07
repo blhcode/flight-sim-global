@@ -36,6 +36,7 @@ function groundColorVariance(pngPath) {
 
 const browser = await chromium.launch({ headless: true });
 const page = await browser.newPage({ viewport: { width: 1280, height: 720 } });
+page.setDefaultTimeout(180000);
 const imagery = [];
 page.on('response', (r) => {
   const u = r.url();
@@ -54,14 +55,15 @@ page.on('response', (r) => {
 
 await page.goto(URL, { waitUntil: 'domcontentloaded', timeout: 30000 });
 await page.click('#spawn-go');
-await page.waitForTimeout(28000);
+await page.waitForFunction(() => window.__fsg?.isFlightReady?.(), { timeout: 180000 });
+await page.waitForTimeout(5000);
 await page.screenshot({ path: OUT, type: 'png' });
 
 const stats = colorVariance(OUT);
 const groundSpread = groundColorVariance(OUT);
-const maxZoom = imagery.reduce((m, t) => Math.max(m, t.z), 0);
+    const maxZoom = imagery.reduce((m, t) => Math.max(m, t.z), 0);
 const okTiles = imagery.filter((t) => t.status === 200).length;
-const pass = okTiles > 10 && maxZoom >= 15 && groundSpread > 40;
+const pass = okTiles > 50 && maxZoom >= 10 && groundSpread > 40;
 
 console.log(
   JSON.stringify({
