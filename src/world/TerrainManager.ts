@@ -26,6 +26,15 @@ export interface SpawnLocation {
   label: string;
 }
 
+export interface ImageryStats {
+  maxZ: number;
+  meshes: number;
+  withMap: number;
+  highZoomWithMap: number;
+  brownNoMap: number;
+  downloading: number;
+}
+
 /**
  * Keeps the aircraft near local (0,0,0) for float precision by offsetting the tile map.
  */
@@ -77,7 +86,7 @@ export class TerrainManager {
       lon0: nearestMeridian(location.lon),
       minLevel,
     });
-    this.map.maxThreads = currentSatelliteProviderName() === 'google' ? 16 : 12;
+    this.map.maxThreads = currentSatelliteProviderName() === 'google' ? 16 : 14;
     this.map.LODThreshold = satelliteLodThreshold();
     this.map.updateInterval = 16;
     this.map.rotateX(-Math.PI / 2);
@@ -111,7 +120,7 @@ export class TerrainManager {
     await this.waitForTileDetail(spawnXZ, ground, 12, 30_000);
   }
 
-  /** Block until high-zoom tiles are in the scene (or timeout). */
+  /** Block until high-zoom tiles are textured and downloads have settled. */
   async waitForTileDetail(
     focus: THREE.Vector3,
     groundY: number,
@@ -120,7 +129,9 @@ export class TerrainManager {
   ): Promise<number> {
     if (!this.map) return 0;
     const savedInterval = this.map.updateInterval;
+    const savedLod = this.map.LODThreshold;
     this.map.updateInterval = 0;
+    this.map.LODThreshold = satellitePrimeLodThreshold();
 
     const primeCam = new THREE.PerspectiveCamera(60, 1, 0.5, 500_000);
     const y = Number.isFinite(groundY) ? groundY : 0;
@@ -130,20 +141,80 @@ export class TerrainManager {
 
     const deadline = performance.now() + timeoutMs;
     let maxZ = 0;
+    let stablePasses = 0;
     while (performance.now() < deadline) {
-      this.map.update(primeCam);
-      maxZ = 0;
-      this.map.traverse((o) => {
-        const parent = o.parent as { z?: number } | null;
-        if (!(o as THREE.Mesh).isMesh || parent?.z == null) return;
-        if (parent.z > maxZ) maxZ = parent.z;
-      });
-      if (maxZ >= minZ) break;
-      await new Promise((r) => setTimeout(r, 80));
+      for (let i = 0; i < 3; i++) this.map.update(primeCam);
+      const stats = this.collectImageryStats(minZ);
+      maxZ = stats.maxZ;
+      if (this.imageryReady(minZ, stats)) {
+        stablePasses++;
+        if (stablePasses >= 5) break;
+      } else {
+        stablePasses = 0;
+      }
+      await new Promise((r) => setTimeout(r, 100));
     }
 
     this.map.updateInterval = savedInterval;
+    this.map.LODThreshold = savedLod;
     return maxZ;
+  }
+
+  /** Keep satellite downloads moving while other assets load. */
+  tickImageryAt(focus: THREE.Vector3, groundY?: number): void {
+    if (!this.map) return;
+    const y = Number.isFinite(groundY) ? groundY! : this.sampleHeightAt(focus);
+    this.lodCamera.position.set(focus.x, y + 15, focus.z + 6);
+    this.lodCamera.lookAt(focus.x, y, focus.z);
+    this.lodCamera.updateMatrixWorld(true);
+    this.map.update(this.lodCamera);
+  }
+
+  imageryStats(minZ = 10): ImageryStats {
+    return this.collectImageryStats(minZ);
+  }
+
+  private collectImageryStats(minZ: number): ImageryStats {
+    const stats: ImageryStats = {
+      maxZ: 0,
+      meshes: 0,
+      withMap: 0,
+      highZoomWithMap: 0,
+      brownNoMap: 0,
+      downloading: this.map?.downloading ?? 0,
+    };
+    if (!this.map) return stats;
+
+    this.map.traverse((o) => {
+      const parent = o.parent as { z?: number } | null;
+      if (!(o as THREE.Mesh).isMesh || parent?.z == null) return;
+      stats.meshes++;
+      if (parent.z > stats.maxZ) stats.maxZ = parent.z;
+
+      const mesh = o as THREE.Mesh;
+      const mats = Array.isArray(mesh.material) ? mesh.material : [mesh.material];
+      let hasMap = false;
+      for (const m of mats) {
+        const mat = m as THREE.MeshBasicMaterial;
+        if (mat.map) {
+          hasMap = true;
+          stats.withMap++;
+        } else if (mat.color?.getHex?.() === 0x3a4a38) {
+          stats.brownNoMap++;
+        }
+      }
+      if (hasMap && parent.z >= minZ) stats.highZoomWithMap++;
+    });
+    return stats;
+  }
+
+  private imageryReady(minZ: number, stats: ImageryStats): boolean {
+    const minHighZoom = minZ >= 12 ? 12 : 6;
+    return (
+      stats.maxZ >= minZ &&
+      stats.highZoomWithMap >= minHighZoom &&
+      stats.brownNoMap === 0
+    );
   }
 
   cycleTextureMode(maxLevel: number, minLevel = 8): void {
@@ -273,7 +344,7 @@ export class TerrainManager {
     void this.primeImageryAt(focus, y);
   }
 
-  private readonly recenterThresholdM = 4_000;
+  private readonly recenterThresholdM = 2_500;
   private _primePending = false;
   private _viewDebounce: ReturnType<typeof setTimeout> | null = null;
 
@@ -379,19 +450,73 @@ export class TerrainManager {
     return Math.hypot(dx, dy);
   }
 
-  update(camera: THREE.Camera, focus?: THREE.Vector3): void {
+  update(
+    camera: THREE.Camera,
+    focus?: THREE.Vector3,
+    motion?: { velocity: THREE.Vector3; aglM: number },
+  ): void {
     if (!this.map) return;
-    this.map.update(this.lodCameraFor(camera, focus));
+    const lodCam = this.lodCameraFor(camera, focus, motion);
+    this.map.update(lodCam);
+
+  if (motion && motion.velocity.length() > 35) {
+      const lead = this.lodCameraFor(camera, focus, motion, 1);
+      this.map.update(lead);
+    }
+
+    if (this._recenterBoost > 0) {
+      this._recenterBoost--;
+      if (this._recenterBoost === 0 && this._normalUpdateInterval >= 0) {
+        this.map.updateInterval = this._normalUpdateInterval;
+      }
+    }
   }
 
-  private readonly lodCamera = new THREE.PerspectiveCamera(60, 1, 0.5, 500_000);
+  /** Aggressive tile refresh after origin shift (prevents the forward "cliff"). */
+  onRecenter(focus: THREE.Vector3): void {
+    if (!this.map) return;
+    this._recenterBoost = 120;
+    this._normalUpdateInterval = this.map.updateInterval;
+    this.map.updateInterval = 0;
+    const y = this.sampleHeightAt(focus);
+    void this.refreshImageryLod(focus);
+    void this.primeImageryAt(focus, y);
+  }
 
-  private lodCameraFor(viewCamera: THREE.Camera, focus?: THREE.Vector3): THREE.Camera {
+  private _recenterBoost = 0;
+  private _normalUpdateInterval = 16;
+
+  private readonly lodCamera = new THREE.PerspectiveCamera(60, 1, 0.5, 500_000);
+  private readonly _lodLook = new THREE.Vector3();
+
+  private lodCameraFor(
+    viewCamera: THREE.Camera,
+    focus?: THREE.Vector3,
+    motion?: { velocity: THREE.Vector3; aglM: number },
+    leadScale = 0.65,
+  ): THREE.Camera {
     if (!focus) return viewCamera;
     const groundY = this.sampleHeightAt(focus);
-    // Always use nadir LOD at the aircraft — chase/outside cameras pitch up and merge ground tiles.
-    this.lodCamera.position.set(focus.x, groundY + 0.5, focus.z);
-    this.lodCamera.lookAt(focus.x, groundY, focus.z);
+    const agl = Math.max(0, motion?.aglM ?? 0);
+    const camH = groundY + Math.max(0.5, Math.min(agl, 1200));
+
+    let lx = focus.x;
+    let lz = focus.z;
+    const vel = motion?.velocity;
+    if (vel) {
+      const hx = vel.x;
+      const hz = vel.z;
+      const hlen = Math.hypot(hx, hz);
+      if (hlen > 8) {
+        const lead = Math.min(3200, hlen * 7) * leadScale;
+        lx += (hx / hlen) * lead;
+        lz += (hz / hlen) * lead;
+      }
+    }
+
+    this.lodCamera.position.set(lx, camH, lz);
+    this._lodLook.set(lx, groundY, lz);
+    this.lodCamera.lookAt(this._lodLook);
     this.lodCamera.updateMatrixWorld(true);
     return this.lodCamera;
   }

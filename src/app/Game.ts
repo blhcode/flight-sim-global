@@ -112,7 +112,20 @@ export class Game {
 
     const def = getAircraftDefinition('cessna172');
     this.aircraft = new AircraftInstance(def);
-    await this.aircraft.loadModel();
+    const spawnXZ = this.terrain.scenePositionForGeo(req.lat, req.lon, 0);
+    const groundY = this.terrain.sampleHeightAtGeo(req.lat, req.lon);
+    const modelLoaded = this.aircraft.loadModel();
+    const imageryTicker = (async () => {
+      while (true) {
+        const done = await Promise.race([
+          modelLoaded.then(() => true),
+          new Promise<boolean>((r) => setTimeout(() => r(false), 120)),
+        ]);
+        this.terrain.tickImageryAt(spawnXZ, groundY);
+        if (done) break;
+      }
+    })();
+    await Promise.all([modelLoaded, imageryTicker]);
     this.sceneManager.scene.add(this.aircraft.root);
 
     const worldPos = this.terrain.spawnPosition(
@@ -186,14 +199,12 @@ export class Game {
     await this.audio.init();
     this.loadingScreen.setMessage('Loading satellite detail…');
     this.loadingScreen.setProgress(0.85);
-    const spawnXZ = this.terrain.scenePositionForGeo(req.lat, req.lon, 0);
-    const groundY = this.terrain.sampleHeightAtGeo(req.lat, req.lon);
-    await this.terrain.waitForTileDetail(spawnXZ, groundY, 12, 45_000);
+    await this.terrain.waitForTileDetail(spawnXZ, groundY, 12, 60_000);
     this.loadingScreen.setProgress(1);
     this.loadingScreen.hide();
     this.phase = 'flying';
     this.input.setFlying(true);
-    this.terrainWarmupFrames = 120;
+    this.terrainWarmupFrames = 180;
     this.terrain.setUpdateInterval(0);
     if (this.aircraft) this.aircraft.controls.throttle = 0.1;
   }
@@ -218,19 +229,38 @@ export class Game {
       this.aircraft.root.position.sub(shift);
       this.aircraft.body.state.position.sub(shift);
       this.aircraft.body.resetGroundContact();
-      this.terrain.primeTilesAt(this.aircraft.root.position);
+      this.terrain.onRecenter(this.aircraft.root.position);
     }
 
+      const telem = this.aircraft.getTelemetry();
+      const bodyVel = this.aircraft.body?.state.velocity;
       this.cameraRig.update(this.aircraft.root, this.aircraft.visualModel, {
         dt,
         onGround: this.aircraft.onGround,
-        speedKts: this.aircraft.getTelemetry().airspeedKts,
+        speedKts: telem.airspeedKts,
       });
-      this.terrain.update(this.sceneManager.camera, this.aircraft.root.position);
+      this.terrain.update(this.sceneManager.camera, this.aircraft.root.position, {
+        velocity: bodyVel ?? new THREE.Vector3(),
+        aglM: telem.altitudeFt * 0.3048,
+      });
+
+      const speedMs = bodyVel?.length() ?? 0;
+      if (this.terrainWarmupFrames === 0 && speedMs > 45) {
+        this.terrain.setUpdateInterval(0);
+      } else if (this.terrainWarmupFrames === 0 && speedMs < 25) {
+        this.terrain.setUpdateInterval(16);
+      }
       if (this.terrainWarmupFrames > 0) {
         this.terrainWarmupFrames--;
         if (this.terrainWarmupFrames === 0) {
-          this.terrain.setUpdateInterval(16);
+          const focus = this.aircraft.root.position;
+          const gy = this.terrain.sampleHeightAtGeo(
+            this.terrain.currentSpawn?.lat ?? 0,
+            this.terrain.currentSpawn?.lon ?? 0,
+          );
+          void this.terrain.waitForTileDetail(focus, gy, 11, 15_000).then(() => {
+            this.terrain.setUpdateInterval(16);
+          });
         }
       }
       if (this.terrain.consumePrimePending()) {
@@ -239,7 +269,6 @@ export class Game {
       this.atmosphere.syncSunLight(this.sceneManager.sun);
 
       this.hud.canvas.style.opacity = '1';
-      const telem = this.aircraft.getTelemetry();
       this.hud.render(telem, this.cameraRig.mode);
       this.audio.update(telem.throttle, telem.airspeedKts);
       this.input.endFrame();
@@ -266,15 +295,12 @@ export class Game {
   /** Test / automation — loading finished, sim running, and satellite detail is present. */
   isFlightReady(): boolean {
     if (this.phase !== 'flying' || !this.aircraft?.body) return false;
-    const map = this.terrain.tileMap;
-    if (!map) return false;
-    let maxZ = 0;
-    map.traverse((o) => {
-      const parent = o.parent as { z?: number } | null;
-      if (!(o as THREE.Mesh).isMesh || parent?.z == null) return;
-      if (parent.z > maxZ) maxZ = parent.z;
-    });
-    return maxZ >= 10;
+    const stats = this.terrain.imageryStats(10);
+    return (
+      stats.maxZ >= 10 &&
+      stats.highZoomWithMap >= 8 &&
+      stats.brownNoMap === 0
+    );
   }
 
   /** Test / automation — nose pitch & bank from body quaternion (gimbal-safe). */
@@ -405,9 +431,13 @@ export class Game {
       this.aircraft.body.state.position.sub(shift);
       this.aircraft.body.resetGroundContact();
     }
-    this.terrain.primeTilesAt(this.aircraft.root.position);
+    this.terrain.onRecenter(this.aircraft.root.position);
     this.cameraRig?.snapCamera();
-    this.terrain.update(this.sceneManager.camera, this.aircraft.root.position);
+    const telem = this.aircraft.getTelemetry();
+    this.terrain.update(this.sceneManager.camera, this.aircraft.root.position, {
+      velocity: this.aircraft.body?.state.velocity ?? new THREE.Vector3(),
+      aglM: telem.altitudeFt * 0.3048,
+    });
   }
 
   /** Test / automation — advance physics without relying on rAF */
