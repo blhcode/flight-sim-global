@@ -213,11 +213,19 @@ export class SimpleFlightModel {
       this.groundYFiltered = sampledGroundY;
     } else {
       const delta = sampledGroundY - this.groundYFiltered;
-      const onGroundEarly = state.position.y - this.groundYFiltered - params.gearOffsetM < 0.35;
-      const slew = onGroundEarly && speed < 10
-        ? Math.max(0.8 * dt, 0.02)
-        : Math.max(18 * dt, 0.35);
-      this.groundYFiltered += THREE.MathUtils.clamp(delta, -slew, slew);
+      const aglEst = state.position.y - this.groundYFiltered - params.gearOffsetM;
+      const onGroundEarly = aglEst < 0.35;
+      if (
+        Math.abs(delta) > 45 && (aglEst < 150 || Math.abs(delta) > 120) ||
+        (onGroundEarly && delta > 8)
+      ) {
+        this.groundYFiltered = sampledGroundY;
+      } else {
+        const slew = onGroundEarly && speed < 10
+          ? Math.max(0.8 * dt, 0.02)
+          : Math.max(18 * dt, 0.35);
+        this.groundYFiltered += THREE.MathUtils.clamp(delta, -slew, slew);
+      }
     }
     const groundY = this.groundYFiltered;
     const agl = state.position.y - groundY - params.gearOffsetM;
@@ -447,13 +455,20 @@ export class SimpleFlightModel {
     const groundY2 = groundHeightAt(state.position);
     if (this.groundYFiltered !== null) {
       const delta2 = groundY2 - this.groundYFiltered;
-      const postSpeed = state.velocity.length();
-      const onGroundLate =
-        state.position.y - this.groundYFiltered - params.gearOffsetM < 0.35;
-      const slew = onGroundLate && postSpeed < 10
-        ? Math.max(0.8 * dt, 0.02)
-        : Math.max(18 * dt, 0.35);
-      this.groundYFiltered += THREE.MathUtils.clamp(delta2, -slew, slew);
+      const aglEst = state.position.y - this.groundYFiltered - params.gearOffsetM;
+      const onGroundLate = aglEst < 0.35;
+      if (
+        Math.abs(delta2) > 45 && (aglEst < 150 || Math.abs(delta2) > 120) ||
+        (onGroundLate && delta2 > 8)
+      ) {
+        this.groundYFiltered = groundY2;
+      } else {
+        const postSpeed = state.velocity.length();
+        const slew = onGroundLate && postSpeed < 10
+          ? Math.max(0.8 * dt, 0.02)
+          : Math.max(18 * dt, 0.35);
+        this.groundYFiltered += THREE.MathUtils.clamp(delta2, -slew, slew);
+      }
     }
     const minY = this.groundYFiltered! + params.gearOffsetM;
     if (state.position.y < minY) {

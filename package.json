@@ -10,6 +10,7 @@
     "build:airports": "node scripts/build-airports.mjs",
     "check:satellite": "node scripts/check-satellite.mjs",
     "debug:satellite": "node scripts/debug-satellite-full.mjs",
+    "debug:ground": "node scripts/debug-ground-return.mjs",
     "check:satellite-remote": "node scripts/check-satellite-remote.mjs",
     "loop:terrain": "node scripts/loop-terrain-check.mjs",
     "check:physics": "node scripts/check-physics.mjs",

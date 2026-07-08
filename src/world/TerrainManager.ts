@@ -329,9 +329,12 @@ export class TerrainManager {
    */
   recenterIfNeeded(focus: THREE.Vector3): THREE.Vector3 | null {
     if (!this.map) return null;
-    if (focus.lengthSq() < this.recenterThresholdM ** 2) return null;
+    const dx = focus.x;
+    const dz = focus.z;
+    if (dx * dx + dz * dz < this.recenterThresholdM ** 2) return null;
 
-    const shift = focus.clone();
+    // Horizontal only — shifting Y corrupts DEM heights after flying at altitude.
+    const shift = new THREE.Vector3(dx, 0, dz);
     this.group.position.sub(shift);
     this._primePending = true;
     return shift;
@@ -533,10 +536,15 @@ export class TerrainManager {
     if (this.spawn && this.spawnGroundElevM > 0) {
       const geo = this.map.world2geo(localPos.clone());
       const dist = this.approxDistM(geo.y, geo.x, this.spawn.lat, this.spawn.lon);
-      if (
-        dist < 900 &&
-        (raw === 0 || Math.abs(raw - this.spawnGroundElevM) > 35)
-      ) {
+      if (dist < 900) {
+        if (raw === 0 || Math.abs(raw) < 0.5) return this.spawnGroundElevM;
+        // DEM mesh above runway database — trust mesh so the aircraft doesn't sink.
+        if (raw > this.spawnGroundElevM + 2) return raw;
+        // Coarse/wrong tile far from runway elev — trust database.
+        if (Math.abs(raw - this.spawnGroundElevM) > 35) return this.spawnGroundElevM;
+        return raw;
+      }
+      if (dist < 2000 && (raw === 0 || Math.abs(raw - this.spawnGroundElevM) > 35)) {
         return this.spawnGroundElevM;
       }
     }
