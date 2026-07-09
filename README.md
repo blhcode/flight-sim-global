@@ -52,8 +52,11 @@ When the **DHC-6 Twin Otter** is selected, a **Weight** option appears on the sp
 
 1. Press **M** in flight
 2. Your position is the green arrow; yellow dots are airports
-3. **Click** the map or an airport to add route waypoints
-4. Use **Clear route** to reset; scroll or **+/−** to zoom
+3. Type **Departure** and **Destination** (ICAO/IATA/name), then **Set route** — or click airports on the map
+4. Long-haul routes draw as curved great-circle paths; a pink course bug on the HDG gauge shows the heading to fly
+5. Drag to pan, scroll or **+/−** to zoom, **Clear route** to reset
+
+The spawn screen also shows each aircraft’s approximate **rotate / liftoff** speed.
 
 ## Aircraft
 

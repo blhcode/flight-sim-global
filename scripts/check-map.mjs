@@ -21,21 +21,43 @@ const result = await page.evaluate(async () => {
   const open = g.isMapVisible();
   const map = document.querySelector('.nav-map');
   const canvas = document.querySelector('.nav-map-canvas');
-  canvas?.dispatchEvent(
-    new MouseEvent('click', { clientX: 900, clientY: 500, bubbles: true }),
-  );
+  const rect = canvas.getBoundingClientRect();
+  const tap = (x, y) => {
+    canvas.dispatchEvent(
+      new PointerEvent('pointerdown', {
+        clientX: rect.left + x,
+        clientY: rect.top + y,
+        bubbles: true,
+        pointerId: 1,
+      }),
+    );
+    canvas.dispatchEvent(
+      new PointerEvent('pointerup', {
+        clientX: rect.left + x,
+        clientY: rect.top + y,
+        bubbles: true,
+        pointerId: 1,
+      }),
+    );
+  };
+  tap(120, 140);
   await new Promise((r) => setTimeout(r, 50));
   const route1 = g.getRoute().length;
-  canvas?.dispatchEvent(
-    new MouseEvent('click', { clientX: 950, clientY: 520, bubbles: true }),
-  );
+  tap(200, 180);
   await new Promise((r) => setTimeout(r, 50));
   const route2 = g.getRoute().length;
+  const course = g.getDesiredHeading?.() ?? null;
   document.querySelector('[data-action="clear-route"]')?.dispatchEvent(
     new MouseEvent('click', { bubbles: true }),
   );
   await new Promise((r) => setTimeout(r, 50));
   const routeCleared = g.getRoute().length;
+  const icaoBtn = document.querySelector('[data-code="icao"]');
+  const iataBtn = document.querySelector('[data-code="iata"]');
+  iataBtn?.dispatchEvent(new MouseEvent('click', { bubbles: true }));
+  const iataActive = iataBtn?.classList.contains('active');
+  icaoBtn?.dispatchEvent(new MouseEvent('click', { bubbles: true }));
+  const icaoActive = icaoBtn?.classList.contains('active');
   g.toggleMap();
   const closed = !g.isMapVisible();
   return {
@@ -45,7 +67,10 @@ const result = await page.evaluate(async () => {
     canvasOk: !!canvas,
     route1,
     route2,
+    courseOk: route2 >= 1 ? typeof course === 'number' : true,
     routeCleared,
+    iataActive,
+    icaoActive,
     closed,
     pass:
       !before &&
@@ -55,6 +80,8 @@ const result = await page.evaluate(async () => {
       route1 >= 1 &&
       route2 >= 2 &&
       routeCleared === 0 &&
+      iataActive &&
+      icaoActive &&
       closed,
   };
 });

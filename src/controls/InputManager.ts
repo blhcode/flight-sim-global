@@ -38,6 +38,14 @@ export class InputManager {
     this.canvas.setAttribute('aria-label', 'Flight simulator view');
 
     const onKeyDown = (e: KeyboardEvent) => {
+      const target = e.target as HTMLElement | null;
+      const typingInField =
+        target instanceof HTMLInputElement ||
+        target instanceof HTMLTextAreaElement ||
+        target instanceof HTMLSelectElement ||
+        target?.isContentEditable;
+      if (typingInField) return;
+
       if (this.flying) {
         if (isModifierBrowserShortcut(e) || GAME_KEYS.has(e.code)) {
           e.preventDefault();

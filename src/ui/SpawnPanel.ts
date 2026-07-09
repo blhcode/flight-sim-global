@@ -2,6 +2,10 @@ import airports from '../data/airports.json';
 import { geocode } from '../world/Geocoder.ts';
 import { parseCoordinate } from '../world/parseCoordinate.ts';
 import { listAircraft, getAircraftDefinition } from '../aircraft/registry.ts';
+import { MS_TO_KTS } from '../aircraft/types.ts';
+
+/** Default rotate speed when an aircraft omits rotateSpeedMs (~55 kt). */
+const DEFAULT_ROTATE_MS = 28;
 
 export interface SpawnRequest {
   lat: number;
@@ -58,6 +62,7 @@ export class SpawnPanel {
               .join('')}
           </select>
         </label>
+        <p id="spawn-rotate" class="spawn-rotate" aria-live="polite"></p>
         <label id="spawn-weight-wrap" class="spawn-weight-wrap hidden">Weight
           <select id="spawn-weight"></select>
         </label>
@@ -105,8 +110,34 @@ export class SpawnPanel {
     this.applyIcao('YSSY');
 
     const aircraftSelect = this.element.querySelector('#spawn-aircraft') as HTMLSelectElement;
-    aircraftSelect.addEventListener('change', () => this.syncWeightOptions());
+    aircraftSelect.addEventListener('change', () => {
+      this.syncWeightOptions();
+      this.syncRotateSpeed();
+    });
+    const weightSelect = this.element.querySelector('#spawn-weight') as HTMLSelectElement;
+    weightSelect.addEventListener('change', () => this.syncRotateSpeed());
     this.syncWeightOptions();
+    this.syncRotateSpeed();
+  }
+
+  private syncRotateSpeed(): void {
+    const el = this.element.querySelector('#spawn-rotate') as HTMLElement | null;
+    if (!el) return;
+    const aircraftId =
+      (this.element.querySelector('#spawn-aircraft') as HTMLSelectElement).value || 'cessna172';
+    const def = getAircraftDefinition(aircraftId);
+    let rotateMs = def.rotateSpeedMs ?? DEFAULT_ROTATE_MS;
+
+    if (aircraftId === 'twinOtter' && def.weightProfiles?.length) {
+      const weightId =
+        (this.element.querySelector('#spawn-weight') as HTMLSelectElement).value ||
+        def.weightProfiles[0]?.id;
+      const profile = def.weightProfiles.find((p) => p.id === weightId);
+      if (profile?.rotateSpeedMs != null) rotateMs = profile.rotateSpeedMs;
+    }
+
+    const kts = Math.round(rotateMs * MS_TO_KTS);
+    el.textContent = `Rotate / liftoff ≈ ${kts} kt`;
   }
 
   private syncWeightOptions(): void {
@@ -119,6 +150,7 @@ export class SpawnPanel {
     if (aircraftId !== 'twinOtter' || !def.weightProfiles?.length) {
       wrap.classList.add('hidden');
       select.innerHTML = '';
+      this.syncRotateSpeed();
       return;
     }
 
@@ -136,6 +168,7 @@ export class SpawnPanel {
     const preferred = profiles.find((p) => p.id === prev)?.id
       ?? (stolAtSaba ? 'stol' : profiles[0]?.id);
     if (preferred) select.value = preferred;
+    this.syncRotateSpeed();
   }
 
   setOnSpawn(cb: (req: SpawnRequest) => void): void {

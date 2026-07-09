@@ -30,7 +30,11 @@ export class InstrumentPanel {
     this.ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
   }
 
-  render(telemetry: FlightTelemetry, cameraMode: CameraMode): void {
+  render(
+    telemetry: FlightTelemetry,
+    cameraMode: CameraMode,
+    courseDeg: number | null = null,
+  ): void {
     const ctx = this.ctx;
     const w = window.innerWidth;
     const h = window.innerHeight;
@@ -59,6 +63,7 @@ export class InstrumentPanel {
       'HDG',
       `${Math.round(telemetry.headingDeg).toString().padStart(3, '0')}°`,
       telemetry.headingDeg / 360,
+      courseDeg != null ? courseDeg / 360 : null,
     );
 
     drawGauge(

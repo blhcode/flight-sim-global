@@ -274,15 +274,16 @@ export class Game {
       }
       this.atmosphere.syncSunLight(this.sceneManager.sun);
 
-      this.hud.canvas.style.opacity = '1';
-      this.hud.render(telem, this.cameraRig.mode);
-      this.audio.update(telem.throttle, telem.airspeedKts);
-
       if (this.input.wasPressed('KeyM')) {
         this.navMap.toggle();
       }
       const geo = this.terrain.localToGeo(this.aircraft.root.position);
       this.navMap.updatePlayer(geo.lat, geo.lon, telem.headingDeg);
+      const courseDeg = this.navMap.getDesiredHeading();
+
+      this.hud.canvas.style.opacity = '1';
+      this.hud.render(telem, this.cameraRig.mode, courseDeg);
+      this.audio.update(telem.throttle, telem.airspeedKts);
 
       this.input.endFrame();
     } else if (this.phase === 'menu') {
@@ -299,6 +300,10 @@ export class Game {
 
   getRoute() {
     return this.navMap.getRoute();
+  }
+
+  getDesiredHeading(): number | null {
+    return this.navMap.getDesiredHeading();
   }
 
   isMapVisible(): boolean {

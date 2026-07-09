@@ -50,24 +50,15 @@ function effectiveThrustFraction(throttle: number): number {
   return Math.pow((t - 0.1) / 0.9, 1.05);
 }
 
-/** Prop/turboprop thrust falls with speed — only for heavy-jet ground-roll profiles. */
+/** Mild speed falloff for heavy jets only — never applied to prop/turboprop. */
 function thrustSpeedFactor(
   engineType: FlightParams['engineType'],
   bodySpeed: number,
   groundRollLiftScale?: number,
 ): number {
-  if ((groundRollLiftScale ?? 1) >= 1) return 1;
+  if (engineType !== 'jet' || (groundRollLiftScale ?? 1) >= 1) return 1;
   const v = Math.max(bodySpeed, 6);
-  switch (engineType) {
-    case 'jet':
-      return Math.max(0.55, 1 - v * 0.00075);
-    case 'turboprop':
-      return Math.max(0.3, 20 / v);
-    case 'prop':
-      return Math.max(0.24, 13 / v);
-    default:
-      return Math.max(0.28, 15 / v);
-  }
+  return Math.max(0.55, 1 - v * 0.00075);
 }
 
 /** Fixed-pitch windmilling drag rises as throttle closes. */
@@ -263,7 +254,7 @@ export class SimpleFlightModel {
     const iasMs = Math.max(0, iasBase * Math.sqrt(rho / rho0));
     const onTaxi = onWheels && iasMs < TAXI_PITCH_LOCK_MS;
     const rotateSpeed = params.rotateSpeedMs ?? ROTATE_SPEED_MS;
-    const onTakeoffRoll = onWheels && !onTaxi && iasMs < 45;
+    const onTakeoffRoll = onWheels && !onTaxi && iasMs < rotateSpeed * 1.05;
     const inRoundout =
       !onWheels &&
       agl < 20 &&
@@ -307,7 +298,10 @@ export class SimpleFlightModel {
       _vLocal.copy(state.velocity).applyQuaternion(_qInv);
       const alpha = Math.atan2(-_vLocal.y, -_vLocal.z);
       alphaDeg = THREE.MathUtils.radToDeg(alpha);
-      if (!onGround || (onGround && speed > 4 && speed < 55)) {
+      // Allow elevator to raise AoA through rotation speed (was capped at 55 m/s,
+      // which blocked Dash 8 / 737 / 747 takeoffs).
+      const groundAlphaMax = Math.max(55, rotateSpeed * 1.15);
+      if (!onGround || (onGround && speed > 4 && speed < groundAlphaMax)) {
         alphaDeg += -controls.elevator * (inRoundout ? 3.2 : 3.2);
       }
     }
@@ -396,14 +390,31 @@ export class SimpleFlightModel {
         _vHat.copy(state.velocity).normalize().negate(),
         groundDecel * dt,
       );
-      const heavyJetRoll = (params.groundRollLiftScale ?? 1) < 1;
+      // Heavy jets (groundRollLiftScale < 1) need a pull at Vr; others can unstick.
+      const needsRotatePull = (params.groundRollLiftScale ?? 1) < 1;
       const rotateLift =
-        speed > rotateSpeed * 0.88 && (!heavyJetRoll || pitchingUp);
+        speed > rotateSpeed * 0.88 && (!needsRotatePull || pitchingUp);
       const liftScale =
         (rotateSpeed > ROTATE_SPEED_MS * 1.2 ? 1.05 : 0.85) *
         (params.groundRollLiftScale ?? 1);
       if (rotateLift) {
-        const liftN = qDyn * params.wingAreaM2 * liftCoeff * liftScale;
+        // Help heavy types unstick near Vr, but only when rotating and not instantly.
+        const weightN = params.massKg * 9.80665;
+        const rawLiftN =
+          qDyn * params.wingAreaM2 * Math.max(liftCoeff, 0.35) * liftScale;
+        const overVr = THREE.MathUtils.clamp(
+          (speed - rotateSpeed * 0.88) / (rotateSpeed * 0.2),
+          0,
+          1,
+        );
+        const pull = pitchingUp ? Math.abs(controls.elevator) : 0;
+        const targetLiftFrac =
+          0.35 + overVr * 0.45 + pull * 0.35; // up to ~1.15× weight with full pull past Vr
+        const unstickBoost = Math.max(
+          1,
+          (weightN * targetLiftFrac) / Math.max(rawLiftN, 1),
+        );
+        const liftN = rawLiftN * Math.min(unstickBoost, 3.2);
         state.velocity.addScaledVector(_up, (liftN / params.massKg) * dt);
       }
       if (inRoundout && pitchingUp) {
@@ -439,8 +450,8 @@ export class SimpleFlightModel {
         : 0;
 
     const pitchLimit =
-      onTakeoffRoll && !pitchingUp && speed > 55
-        ? Math.max(0.25, 1 - (speed - 55) / 40)
+      onTakeoffRoll && !pitchingUp && speed > rotateSpeed * 0.85
+        ? Math.max(0.25, 1 - (speed - rotateSpeed * 0.85) / (rotateSpeed * 0.55))
         : 1;
     const flareBoost = inRoundout ? 1.75 : 1;
     const maxPitchUp = inRoundout

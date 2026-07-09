@@ -48,6 +48,8 @@ export function drawGauge(
   label: string,
   value: string,
   needleNorm: number,
+  /** Optional course bug (0–1 around the same dial as the needle). */
+  courseNorm?: number | null,
 ): void {
   ctx.fillStyle = 'rgba(10, 16, 28, 0.82)';
   ctx.beginPath();
@@ -59,6 +61,22 @@ export function drawGauge(
 
   const start = Math.PI * 0.75;
   const end = Math.PI * 2.25;
+
+  if (courseNorm != null && Number.isFinite(courseNorm)) {
+    const c = Math.max(0, Math.min(1, courseNorm));
+    const courseAngle = start + (end - start) * c;
+    const outer = r - 2;
+    const inner = r - 14;
+    ctx.strokeStyle = '#ff4da6';
+    ctx.lineWidth = 3;
+    ctx.lineCap = 'round';
+    ctx.beginPath();
+    ctx.moveTo(x + Math.cos(courseAngle) * outer, y + Math.sin(courseAngle) * outer);
+    ctx.lineTo(x + Math.cos(courseAngle) * inner, y + Math.sin(courseAngle) * inner);
+    ctx.stroke();
+    ctx.lineCap = 'butt';
+  }
+
   const angle = start + (end - start) * needleNorm;
   ctx.strokeStyle = '#ff6b4a';
   ctx.lineWidth = 3;
