@@ -1,6 +1,7 @@
 import airports from '../data/airports.json';
 import { geocode } from '../world/Geocoder.ts';
 import { parseCoordinate } from '../world/parseCoordinate.ts';
+import { listAircraft, getAircraftDefinition } from '../aircraft/registry.ts';
 
 export interface SpawnRequest {
   lat: number;
@@ -8,6 +9,8 @@ export interface SpawnRequest {
   altM: number;
   headingDeg: number;
   label: string;
+  aircraftId: string;
+  weightProfileId?: string;
 }
 
 interface AirportRecord {
@@ -44,7 +47,20 @@ export class SpawnPanel {
     this.element.innerHTML = `
       <div class="spawn-card">
         <h2>Flight Sim Global</h2>
-        <p class="spawn-sub">Real-world terrain · Cessna 172SP</p>
+        <p class="spawn-sub">Real-world terrain · pick your aircraft</p>
+        <label>Aircraft
+          <select id="spawn-aircraft">
+            ${listAircraft()
+              .map(
+                (a) =>
+                  `<option value="${a.id}"${a.id === 'cessna172' ? ' selected' : ''}>${a.displayName}</option>`,
+              )
+              .join('')}
+          </select>
+        </label>
+        <label id="spawn-weight-wrap" class="spawn-weight-wrap hidden">Weight
+          <select id="spawn-weight"></select>
+        </label>
         <label>Airport ICAO / IATA
           <input type="text" id="spawn-icao" placeholder="YSSY or YWVA" value="YSSY" maxlength="4" autocapitalize="characters" />
         </label>
@@ -58,7 +74,7 @@ export class SpawnPanel {
         <label>Heading ° <input type="number" id="spawn-hdg" value="160" min="0" max="359" /></label>
         <p id="spawn-error" class="spawn-error hidden" role="alert"></p>
         <button type="button" id="spawn-go" class="primary">Load terrain & fly</button>
-        <p class="spawn-hint">ICAO/IATA or lat/lon — clear the airport code to spawn by coordinates. W/S pitch · A/D roll · Q/E yaw · ↑/↓ throttle</p>
+        <p class="spawn-hint">ICAO/IATA or lat/lon — clear the airport code to spawn by coordinates. W/S pitch · A/D roll · Q/E yaw · ↑/↓ throttle · M map</p>
       </div>
     `;
     container.appendChild(this.element);
@@ -87,6 +103,39 @@ export class SpawnPanel {
     });
 
     this.applyIcao('YSSY');
+
+    const aircraftSelect = this.element.querySelector('#spawn-aircraft') as HTMLSelectElement;
+    aircraftSelect.addEventListener('change', () => this.syncWeightOptions());
+    this.syncWeightOptions();
+  }
+
+  private syncWeightOptions(): void {
+    const aircraftId =
+      (this.element.querySelector('#spawn-aircraft') as HTMLSelectElement).value || 'cessna172';
+    const wrap = this.element.querySelector('#spawn-weight-wrap') as HTMLElement;
+    const select = this.element.querySelector('#spawn-weight') as HTMLSelectElement;
+    const def = getAircraftDefinition(aircraftId);
+
+    if (aircraftId !== 'twinOtter' || !def.weightProfiles?.length) {
+      wrap.classList.add('hidden');
+      select.innerHTML = '';
+      return;
+    }
+
+    wrap.classList.remove('hidden');
+    const prev = select.value;
+    const profiles = def.weightProfiles;
+    select.innerHTML = profiles
+      .map((p) => `<option value="${p.id}">${p.label}</option>`)
+      .join('');
+
+    const stolAtSaba =
+      ['TNCS', 'SAB'].includes(
+        (this.element.querySelector('#spawn-icao') as HTMLInputElement).value.trim().toUpperCase(),
+      );
+    const preferred = profiles.find((p) => p.id === prev)?.id
+      ?? (stolAtSaba ? 'stol' : profiles[0]?.id);
+    if (preferred) select.value = preferred;
   }
 
   setOnSpawn(cb: (req: SpawnRequest) => void): void {
@@ -134,6 +183,7 @@ export class SpawnPanel {
     (this.element.querySelector('#spawn-lon') as HTMLInputElement).value = String(ap.lon);
     (this.element.querySelector('#spawn-search') as HTMLInputElement).value =
       `${ap.name}${ap.city ? `, ${ap.city}` : ''}`;
+    this.syncWeightOptions();
     return true;
   }
 
@@ -152,6 +202,14 @@ export class SpawnPanel {
     (this.element.querySelector('#spawn-search') as HTMLInputElement).value = result.displayName;
   }
 
+  private readWeightProfileId(aircraftId: string): string | undefined {
+    if (aircraftId !== 'twinOtter') return undefined;
+    const def = getAircraftDefinition(aircraftId);
+    if (!def.weightProfiles?.length) return undefined;
+    const select = this.element.querySelector('#spawn-weight') as HTMLSelectElement;
+    return select.value || def.weightProfiles[0]?.id;
+  }
+
   private resolveSpawn(): SpawnRequest | null {
     const icaoInput = this.element.querySelector('#spawn-icao') as HTMLInputElement;
     const code = icaoInput.value.trim();
@@ -164,12 +222,16 @@ export class SpawnPanel {
       }
       const headingDeg =
         parseFloat((this.element.querySelector('#spawn-hdg') as HTMLInputElement).value) || 0;
+      const aircraftId =
+        (this.element.querySelector('#spawn-aircraft') as HTMLSelectElement).value || 'cessna172';
       return {
         lat: ap.lat,
         lon: ap.lon,
         altM: ap.elevM + 3,
         headingDeg,
         label: `${ap.name}${ap.city ? `, ${ap.city}` : ''}`,
+        aircraftId,
+        weightProfileId: this.readWeightProfileId(aircraftId),
       };
     }
 
@@ -179,6 +241,8 @@ export class SpawnPanel {
     const lon = parseCoordinate(lonRaw, 'lon');
     const headingDeg =
       parseFloat((this.element.querySelector('#spawn-hdg') as HTMLInputElement).value) || 0;
+    const aircraftId =
+      (this.element.querySelector('#spawn-aircraft') as HTMLSelectElement).value || 'cessna172';
     const label =
       (this.element.querySelector('#spawn-search') as HTMLInputElement).value ||
       (lat != null && lon != null
@@ -200,7 +264,15 @@ export class SpawnPanel {
     );
     const altM = (ap?.elevM ?? 0) + 3;
 
-    return { lat, lon, altM, headingDeg, label };
+    return {
+      lat,
+      lon,
+      altM,
+      headingDeg,
+      label,
+      aircraftId,
+      weightProfileId: this.readWeightProfileId(aircraftId),
+    };
   }
 
   private async submit(): Promise<void> {

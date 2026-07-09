@@ -11,10 +11,12 @@
 
 - [OpenFlights Airport Database](https://openflights.org/data.html) (ODbL)
 
-## Aircraft Model
+## Aircraft Models
 
-- **Default procedural Cessna 172**: Generated in-project for fallback when no external model is present.
-- **Cessna 172SP**: [NLM / Sketchfab](https://sketchfab.com/3d-models/free-cessna-172sp-c9cadc2f026946da8cf9715a683739e9) (CC Attribution) — shipped at `public/models/cessna-172sp/scene.glb`.
+- **Cessna 172SP**: [NLM / Sketchfab](https://sketchfab.com/3d-models/free-cessna-172sp-c9cadc2f026946da8cf9715a683739e9) (CC Attribution) — `public/models/cessna-172sp/scene.glb`
+- **Boeing 737-800, 747-400, Dash 8 Q400**: [Flightradar24 3D models](https://github.com/Flightradar24/fr24-3d-models) (GPLv2), originally from the [FlightGear / FGMEMBERS](http://www.flightgear.org/) community — `public/models/b737-800/`, `b747-400/`, `dash8-q400/`
+- **DHC-6 Twin Otter**: [FlightGear Twin Otter](https://github.com/ranguli/dhc6) (GPL), converted from AC3D to GLB — `public/models/twin-otter/scene.glb`
+- **Procedural fallbacks**: Generated in-project when an external GLB fails to load.
 
 ## Libraries
 

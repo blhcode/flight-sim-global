@@ -1,8 +1,9 @@
 import * as THREE from 'three';
-import type { AircraftDefinition } from '../aircraft/types.ts';
+import type { AircraftDefinition, WeightProfile } from '../aircraft/types.ts';
 import { SimpleFlightModel } from '../physics/SimpleFlightModel.ts';
 import type { SimControls } from '../physics/forces/GroundContact.ts';
 import { loadAircraftModel } from '../rendering/ModelLoader.ts';
+import { setLandingGearVisible } from '../rendering/landingGear.ts';
 import { M_TO_FT, MS_TO_KTS, type FlightTelemetry } from './types.ts';
 
 export class AircraftInstance {
@@ -24,13 +25,45 @@ export class AircraftInstance {
   flapsDeployed = false;
   gearDown = true;
   onGround = true;
+  private activeWeight: WeightProfile | null = null;
 
-  constructor(definition: AircraftDefinition) {
+  constructor(definition: AircraftDefinition, weightProfileId?: string) {
     this.definition = definition;
+    this.setWeightProfile(weightProfileId);
+  }
+
+  setWeightProfile(profileId?: string): void {
+    const profiles = this.definition.weightProfiles;
+    if (!profiles?.length) {
+      this.activeWeight = null;
+      return;
+    }
+    this.activeWeight =
+      profiles.find((p) => p.id === profileId) ?? profiles[0] ?? null;
+  }
+
+  get weightProfileId(): string | undefined {
+    return this.activeWeight?.id;
+  }
+
+  get weightProfileLabel(): string | undefined {
+    return this.activeWeight?.label;
+  }
+
+  private flightMassKg(): number {
+    return this.activeWeight?.massKg ?? this.definition.massKg;
+  }
+
+  private flightRotateSpeedMs(): number | undefined {
+    return this.activeWeight?.rotateSpeedMs ?? this.definition.rotateSpeedMs;
+  }
+
+  private flightStallSpeedMs(): number | undefined {
+    return this.activeWeight?.stallSpeedMs ?? this.definition.stallSpeedMs;
   }
 
   async loadModel(): Promise<void> {
-    const loaded = await loadAircraftModel(this.definition.modelUrl);
+    const loaded = await loadAircraftModel(this.definition);
     this.model = loaded.root;
     this.model.userData.mixer = loaded.mixer;
     const m = this.definition.cameraMounts;
@@ -88,16 +121,20 @@ export class AircraftInstance {
         brakes: this.controls.brakes,
       },
       {
-        massKg: d.massKg,
+        massKg: this.flightMassKg(),
         wingAreaM2: d.wingAreaM2,
         maxThrustN: d.maxThrustN,
         gearOffsetM: d.gearOffsetM,
-        pitchAuthority: 1.05,
-        rollAuthority: 1.55,
-        yawAuthority: 2.0,
+        pitchAuthority: d.controlAuthority.pitch,
+        rollAuthority: d.controlAuthority.roll,
+        yawAuthority: d.controlAuthority.yaw,
         stallAlphaDeg: d.stallAlphaDeg,
         flapsCL: d.flapsCL,
         aeroTables: d.aeroTables,
+        engineType: d.engineType,
+        rotateSpeedMs: this.flightRotateSpeedMs(),
+        stallSpeedMs: this.flightStallSpeedMs(),
+        groundRollLiftScale: d.groundRollLiftScale,
       },
       groundHeightFn,
     );
@@ -111,7 +148,10 @@ export class AircraftInstance {
       rudder: this.controls.rudder,
       flaps: this.flapsDeployed ? 1 : 0,
       throttle: this.controls.throttle,
+      gearDown: this.gearDown,
     }, dt);
+
+    setLandingGearVisible(this.model, this.gearDown);
   }
 
   getTelemetry(): FlightTelemetry {

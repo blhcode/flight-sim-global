@@ -1,5 +1,6 @@
 import * as THREE from 'three';
 import type { AeroPoint } from '../physics/AtmosphereISA.ts';
+import type { ProceduralModelId } from '../rendering/procedural/types.ts';
 
 export interface ControlSurfaceInputs {
   elevator: number;
@@ -7,20 +8,42 @@ export interface ControlSurfaceInputs {
   rudder: number;
   flaps: number;
   throttle: number;
+  gearDown: boolean;
+}
+
+export type EngineType = 'prop' | 'turboprop' | 'jet';
+
+/** Optional takeoff weight preset — overrides mass and sometimes V-speeds. */
+export interface WeightProfile {
+  id: string;
+  label: string;
+  massKg: number;
+  rotateSpeedMs?: number;
+  stallSpeedMs?: number;
 }
 
 export interface AircraftDefinition {
   id: string;
   displayName: string;
   modelUrl: string | null;
+  proceduralModelId: ProceduralModelId;
+  engineType: EngineType;
   massKg: number;
   wingAreaM2: number;
   wingSpanM: number;
   chordM: number;
   maxThrustN: number;
+  /** Rotation speed (m/s) for ground roll lift — defaults to ~55 kt. */
+  rotateSpeedMs?: number;
+  /** Stall speed (m/s) for stall logic — defaults to ~48 kt. */
+  stallSpeedMs?: number;
+  /** Ground-roll lift multiplier — heavy jets need more to rotate. */
+  groundRollLiftScale?: number;
   aeroTables: AeroPoint[];
   flapsCL: number;
   stallAlphaDeg: number;
+  /** When set, spawn UI offers weight presets (e.g. Saba STOL). */
+  weightProfiles?: WeightProfile[];
   controlAuthority: { pitch: number; roll: number; yaw: number };
   gearOffsetM: number;
   cameraMounts: {

@@ -447,6 +447,18 @@ export class TerrainManager {
     return this.geoToLocal(lat, lon, altM);
   }
 
+  localToGeo(localPos: THREE.Vector3): { lat: number; lon: number; altM: number } {
+    if (!this.map) {
+      return {
+        lat: this.spawn?.lat ?? 0,
+        lon: this.spawn?.lon ?? 0,
+        altM: localPos.y,
+      };
+    }
+    const geo = this.map.world2geo(localPos.clone());
+    return { lat: geo.y, lon: geo.x, altM: geo.z };
+  }
+
   private approxDistM(lat1: number, lon1: number, lat2: number, lon2: number): number {
     const dy = (lat1 - lat2) * 111_000;
     const dx = (lon1 - lon2) * 111_000 * Math.cos((lat1 * Math.PI) / 180);

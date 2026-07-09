@@ -90,6 +90,8 @@ export function createProceduralCessna172(): THREE.Group {
 
   const propeller = new THREE.Group();
   propeller.name = 'propeller';
+  propeller.userData.isPropeller = true;
+  propeller.userData.propAxis = 'z';
   propeller.position.set(0, 1.05, 2.42);
   for (let i = 0; i < 3; i++) {
     const blade = new THREE.Mesh(new THREE.BoxGeometry(0.08, 1.6, 0.02), dark);

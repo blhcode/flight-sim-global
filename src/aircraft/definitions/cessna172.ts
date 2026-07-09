@@ -13,27 +13,13 @@ const aeroTables = [
   { alphaDeg: 30, CL: 0.55, CD: 0.28 },
 ];
 
-let propAngle = 0;
-
-function spinPropellers(model: THREE.Object3D, throttle: number, dt: number): void {
-  const speed = 400 + throttle * 2200;
-  model.traverse((child) => {
-    if (child.userData.isPropeller || child.name === 'propeller' || child.name === 'Circle_6') {
-      child.rotation.z += dt * speed;
-    }
-  });
-}
-
-function animateC172(model: THREE.Object3D, inputs: ControlSurfaceInputs, dt: number): void {
-  spinPropellers(model, inputs.throttle, dt);
-
+function animateC172(model: THREE.Object3D, inputs: ControlSurfaceInputs, _dt: number): void {
   const elevator = model.getObjectByName('elevator');
   const leftAileron = model.getObjectByName('aileronL');
   const rightAileron = model.getObjectByName('aileronR');
   const rudder = model.getObjectByName('rudder');
   const flapsL = model.getObjectByName('flapL');
   const flapsR = model.getObjectByName('flapR');
-  const prop = model.getObjectByName('propeller');
 
   if (elevator) elevator.rotation.x = inputs.elevator * 0.35;
   if (leftAileron) leftAileron.rotation.x = inputs.aileron * 0.4;
@@ -42,22 +28,19 @@ function animateC172(model: THREE.Object3D, inputs: ControlSurfaceInputs, dt: nu
   const flapAngle = inputs.flaps * 0.55;
   if (flapsL) flapsL.rotation.x = flapAngle;
   if (flapsR) flapsR.rotation.x = flapAngle;
-
-  if (prop) {
-    propAngle += dt * (400 + inputs.throttle * 1800);
-    prop.rotation.z = propAngle;
-  }
 }
 
 export const cessna172Definition: AircraftDefinition = {
   id: 'cessna172',
   displayName: 'Cessna 172SP',
   modelUrl: `${import.meta.env.BASE_URL}models/cessna-172sp/scene.glb`,
+  proceduralModelId: 'cessna172',
+  engineType: 'prop',
   massKg: 1043,
   wingAreaM2: 16.2,
   wingSpanM: 11.0,
   chordM: 1.5,
-  maxThrustN: 3600,
+  maxThrustN: 3300,
   aeroTables,
   flapsCL: 0.45,
   stallAlphaDeg: 15,

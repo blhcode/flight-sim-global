@@ -12,6 +12,8 @@ import { InstrumentPanel } from '../hud/InstrumentPanel.ts';
 import { EngineAudio } from '../audio/EngineAudio.ts';
 import { LoadingScreen } from '../ui/LoadingScreen.ts';
 import { SpawnPanel, type SpawnRequest } from '../ui/SpawnPanel.ts';
+import { NavigationMap } from '../ui/NavigationMap.ts';
+import { getGearDebug } from '../rendering/landingGear.ts';
 import type { TileMap } from 'three-tile';
 
 export type GamePhase = 'menu' | 'loading' | 'flying';
@@ -24,6 +26,7 @@ export class Game {
   private readonly spawnPanel: SpawnPanel;
   private readonly loadingScreen: LoadingScreen;
   private readonly hud: InstrumentPanel;
+  private readonly navMap: NavigationMap;
   private readonly input: InputManager;
   private readonly audio = new EngineAudio();
 
@@ -56,6 +59,7 @@ export class Game {
     this.loadingScreen = new LoadingScreen(container);
     this.loadingScreen.hide();
     this.hud = new InstrumentPanel(container);
+    this.navMap = new NavigationMap(container);
     this.hud.render(
       {
         airspeedKts: 0,
@@ -110,8 +114,9 @@ export class Game {
       this.sceneManager.scene.remove(this.aircraft.root);
     }
 
-    const def = getAircraftDefinition('cessna172');
-    this.aircraft = new AircraftInstance(def);
+    const def = getAircraftDefinition(req.aircraftId);
+    this.audio.setEngineType(def.engineType);
+    this.aircraft = new AircraftInstance(def, req.weightProfileId);
     const spawnXZ = this.terrain.scenePositionForGeo(req.lat, req.lon, 0);
     const groundY = this.terrain.sampleHeightAtGeo(req.lat, req.lon);
     const modelLoaded = this.aircraft.loadModel();
@@ -197,6 +202,7 @@ export class Game {
     );
 
     await this.audio.init();
+    this.audio.setEngineType(def.engineType);
     this.loadingScreen.setMessage('Loading satellite detail…');
     this.loadingScreen.setProgress(0.85);
     await this.terrain.waitForTileDetail(spawnXZ, groundY, 12, 60_000);
@@ -271,6 +277,13 @@ export class Game {
       this.hud.canvas.style.opacity = '1';
       this.hud.render(telem, this.cameraRig.mode);
       this.audio.update(telem.throttle, telem.airspeedKts);
+
+      if (this.input.wasPressed('KeyM')) {
+        this.navMap.toggle();
+      }
+      const geo = this.terrain.localToGeo(this.aircraft.root.position);
+      this.navMap.updatePlayer(geo.lat, geo.lon, telem.headingDeg);
+
       this.input.endFrame();
     } else if (this.phase === 'menu') {
       this.hud.canvas.style.opacity = '0';
@@ -282,6 +295,18 @@ export class Game {
 
   getTelemetry() {
     return this.aircraft?.getTelemetry() ?? null;
+  }
+
+  getRoute() {
+    return this.navMap.getRoute();
+  }
+
+  isMapVisible(): boolean {
+    return this.navMap.isVisible();
+  }
+
+  toggleMap(): boolean {
+    return this.navMap.toggle();
   }
 
   /** True when terrain + aircraft are placed on the runway. */
@@ -379,6 +404,35 @@ export class Game {
   getAircraftPos(): { x: number; y: number; z: number } | null {
     const p = this.aircraft?.root.position;
     return p ? { x: p.x, y: p.y, z: p.z } : null;
+  }
+
+  /** Test / automation — visual model orientation and mesh stats after ModelLoader normalization. */
+  getModelDebug(): {
+    meshes: number;
+    forward: { x: number; y: number; z: number };
+    size: { x: number; y: number; z: number };
+    rootName: string;
+    merged: boolean;
+    gear: ReturnType<typeof getGearDebug> | null;
+  } | null {
+    if (!this.aircraft?.model) return null;
+    const model = this.aircraft.visualModel;
+    model.updateMatrixWorld(true);
+    const forward = new THREE.Vector3(0, 0, -1).applyQuaternion(model.quaternion);
+    let meshes = 0;
+    model.traverse((child) => {
+      if (child instanceof THREE.Mesh) meshes++;
+    });
+    const box = new THREE.Box3().setFromObject(model);
+    const size = box.getSize(new THREE.Vector3());
+    return {
+      meshes,
+      forward: { x: forward.x, y: forward.y, z: forward.z },
+      size: { x: size.x, y: size.y, z: size.z },
+      rootName: model.name || model.children[0]?.name || 'unknown',
+      merged: model.getObjectByName('twinOtterMerged') != null,
+      gear: getGearDebug(model),
+    };
   }
 
   /** Test / automation — tile map for material diagnostics */

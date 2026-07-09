@@ -1,18 +1,28 @@
 # Flight Sim Global
 
-Browser-based global flight simulator with real-world satellite terrain, Cessna 172SP flight physics, and instrument HUD.
+Fly anywhere on Earth in your browser — real satellite terrain, multiple aircraft, and a simple navigation map for planning routes.
+
+**[Play now → blhcode.github.io/flight-sim-global](https://blhcode.github.io/flight-sim-global/)**
+
+## Features
+
+- **Global terrain** — ArcGIS elevation and satellite imagery streamed via [three-tile](https://github.com/sxguojf/three-tile)
+- **Five flyable aircraft** — Cessna 172SP, DHC-6 Twin Otter, Dash 8 Q400, Boeing 737-800, Boeing 747-400
+- **Real 3D models** — GLB aircraft with procedural fallbacks if a model fails to load
+- **Flight physics** — 120 Hz simulation with stall warnings, flares, coordinated turns, and weight-aware braking
+- **Navigation map** — Press **M** to see your position, nearby airports, and click to build a route
+- **7,600+ airports** — Spawn by ICAO/IATA code (e.g. `YSSY`, `TNCS`) or lat/lon
 
 ## Quick start
 
 ```bash
+git clone https://github.com/blhcode/flight-sim-global.git
+cd flight-sim-global
 npm install
-npm run build:airports   # optional — regenerates airport database
 npm run dev
 ```
 
-Open the URL shown in the terminal (default `http://localhost:5173`). Enter an airport code (e.g. `YSSY`), click **Load terrain & fly**, then use the keyboard controls below.
-
-**Live demo:** [blhcode.github.io/flight-sim-global](https://blhcode.github.io/flight-sim-global/)
+Open **http://localhost:5173**, pick an aircraft and airport, then click **Load terrain & fly**.
 
 ## Controls
 
@@ -25,46 +35,69 @@ Open the URL shown in the terminal (default `http://localhost:5173`). Enter an a
 | F | Toggle flaps |
 | G | Toggle gear |
 | B | Wheel brakes (hold) |
-| C | Cycle camera (cockpit → gear → outside) |
+| C | Cycle camera (cockpit → gear → outside → chase) |
 | T | Cycle terrain texture (satellite / roadmap) |
+| M | Toggle navigation map |
 
-Click the 3D view after loading to focus keyboard controls.
+Click the 3D view after loading so keyboard input is focused.
 
-## Deploy (GitHub Pages)
+### Twin Otter weight
 
-**Live site:** [blhcode.github.io/flight-sim-global](https://blhcode.github.io/flight-sim-global/)
+When the **DHC-6 Twin Otter** is selected, a **Weight** option appears on the spawn screen:
 
-Pushes to `main` can deploy automatically if you copy [`docs/deploy-workflow.yml`](docs/deploy-workflow.yml) to `.github/workflows/deploy.yml` (requires `workflow` OAuth scope on push).
+- **Standard** — typical commuter load
+- **STOL** — lighter weight for short runways (e.g. Saba TNCS); auto-selected when spawning at `TNCS` / `SAB`
 
-Manual deploy (replaces any old `gh-pages` branch content):
+### Navigation map
+
+1. Press **M** in flight
+2. Your position is the green arrow; yellow dots are airports
+3. **Click** the map or an airport to add route waypoints
+4. Use **Clear route** to reset; scroll or **+/−** to zoom
+
+## Aircraft
+
+| Aircraft | Type | Notes |
+|----------|------|--------|
+| Cessna 172SP | Prop | Light trainer |
+| DHC-6 Twin Otter | Turboprop | Standard / STOL weight profiles |
+| Dash 8 Q400 | Turboprop | Regional turboprop |
+| Boeing 737-800 | Jet | Narrow-body airliner |
+| Boeing 747-400 | Jet | Heavy wide-body; realistic long takeoff roll |
+
+Model sources and licenses are listed in [CREDITS.md](CREDITS.md).
+
+## Deploy
+
+Pushes to `main` can deploy to GitHub Pages if you install the workflow from [`docs/deploy-workflow.yml`](docs/deploy-workflow.yml) into `.github/workflows/deploy.yml` (requires `workflow` OAuth scope when pushing via HTTPS).
+
+Manual deploy:
 
 ```bash
 npm run build
-cd dist && git init -b gh-pages && git add -A && git commit -m "Deploy" \
-  && git push -f https://github.com/blhcode/flight-sim-global.git HEAD:gh-pages
+npm run preview   # test production build locally
 ```
 
-This repo is **source only** — no `dist/`, `node_modules/`, or secrets.
-
-## Architecture
-
-- **Vite + TypeScript** frontend
-- **Three.js** rendering with PBR tone mapping and sky atmosphere
-- **three-tile** global terrain (ArcGIS elevation + imagery)
-- **6DOF rigid-body physics** at 120 Hz with RK4 integration
-- **Extensible aircraft registry** — v1 ships Cessna 172; add definitions in `src/aircraft/definitions/`
-
-## Aircraft model
-
-The [Cessna 172SP (NLM, Sketchfab)](https://sketchfab.com/3d-models/free-cessna-172sp-c9cadc2f026946da8cf9715a683739e9) is included at `public/models/cessna-172sp/scene.glb`. If that file is missing, a procedural Cessna 172 is used automatically.
-
-## Build for production
+## Development
 
 ```bash
-npm run build
-npm run preview
+npm run build:airports   # regenerate airport database from OpenFlights
+npm run build            # production build
 ```
+
+Optional browser checks (requires Playwright): `npm run check:brakes`, `check:map`, `check:physics`, etc.
+
+## Tech stack
+
+- **Vite + TypeScript**
+- **Three.js** — rendering, atmosphere, PBR
+- **three-tile** — global DEM + imagery tiles
+- Custom flight model — per-aircraft mass, thrust, V-speeds, and aero tables
 
 ## Credits
 
-See [CREDITS.md](CREDITS.md) for data sources and attributions.
+Terrain, imagery, airport data, aircraft models, and libraries — see [CREDITS.md](CREDITS.md).
+
+## License
+
+Source code in this repository is provided as-is for personal and educational use. Third-party assets (aircraft models, terrain services) remain under their respective licenses listed in CREDITS.md.

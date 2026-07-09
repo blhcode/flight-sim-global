@@ -82,6 +82,7 @@ export class FlightControls {
     }
     if (this.input.wasPressed('KeyG')) {
       this.aircraft.gearDown = !this.aircraft.gearDown;
+      this.aircraft.controls.gearDown = this.aircraft.gearDown;
     }
     if (this.input.wasPressed('KeyC')) {
       this.onCameraCycle();

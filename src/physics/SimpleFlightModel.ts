@@ -31,6 +31,10 @@ export interface FlightParams {
   stallAlphaDeg: number;
   flapsCL: number;
   aeroTables: AeroPoint[];
+  engineType?: 'prop' | 'turboprop' | 'jet';
+  rotateSpeedMs?: number;
+  stallSpeedMs?: number;
+  groundRollLiftScale?: number;
 }
 
 const MS_TO_KTS = 1.94384;
@@ -44,6 +48,26 @@ function effectiveThrustFraction(throttle: number): number {
   const t = THREE.MathUtils.clamp(throttle, 0, 1);
   if (t <= 0.1) return 0;
   return Math.pow((t - 0.1) / 0.9, 1.05);
+}
+
+/** Prop/turboprop thrust falls with speed — only for heavy-jet ground-roll profiles. */
+function thrustSpeedFactor(
+  engineType: FlightParams['engineType'],
+  bodySpeed: number,
+  groundRollLiftScale?: number,
+): number {
+  if ((groundRollLiftScale ?? 1) >= 1) return 1;
+  const v = Math.max(bodySpeed, 6);
+  switch (engineType) {
+    case 'jet':
+      return Math.max(0.55, 1 - v * 0.00075);
+    case 'turboprop':
+      return Math.max(0.3, 20 / v);
+    case 'prop':
+      return Math.max(0.24, 13 / v);
+    default:
+      return Math.max(0.28, 15 / v);
+  }
 }
 
 /** Fixed-pitch windmilling drag rises as throttle closes. */
@@ -238,6 +262,7 @@ export class SimpleFlightModel {
     const iasBase = Math.max(bodySpeed, speed * 0.55);
     const iasMs = Math.max(0, iasBase * Math.sqrt(rho / rho0));
     const onTaxi = onWheels && iasMs < TAXI_PITCH_LOCK_MS;
+    const rotateSpeed = params.rotateSpeedMs ?? ROTATE_SPEED_MS;
     const onTakeoffRoll = onWheels && !onTaxi && iasMs < 45;
     const inRoundout =
       !onWheels &&
@@ -246,11 +271,32 @@ export class SimpleFlightModel {
       iasMs < 42 &&
       speed > 8;
 
-    const thrustN =
+    _fwdGround.copy(_forward);
+    _fwdGround.y = 0;
+    let groundFwdSpeed = 0;
+    if (_fwdGround.lengthSq() > 0.001) {
+      _fwdGround.normalize();
+      groundFwdSpeed = Math.abs(state.velocity.dot(_fwdGround));
+    }
+
+    const thrustFrac = effectiveThrustFraction(controls.throttle);
+    // Run-up / parking brake: power set and barely moving — not landing rollout
+    const brakeHold =
+      onWheels &&
+      controls.brakes > 0 &&
+      thrustFrac > 0.25 &&
+      groundFwdSpeed < 1.2;
+    let thrustN =
       params.maxThrustN *
-      effectiveThrustFraction(controls.throttle) *
+      thrustFrac *
+      thrustSpeedFactor(params.engineType, bodySpeed, params.groundRollLiftScale) *
       Math.min(1, rho / rho0);
-    state.velocity.addScaledVector(_forward, (thrustN / params.massKg) * dt);
+    if (onWheels && controls.brakes > 0 && !brakeHold) {
+      thrustN *= Math.max(0, 1 - controls.brakes * 0.98);
+    }
+    if (!brakeHold) {
+      state.velocity.addScaledVector(_forward, (thrustN / params.massKg) * dt);
+    }
 
     state.velocity.y -= 9.80665 * dt;
 
@@ -271,7 +317,9 @@ export class SimpleFlightModel {
     const qDyn = 0.5 * rho * speed * speed;
 
     const stallAlpha = params.stallAlphaDeg + controls.flaps * 4;
-    const stallSpeed = controls.flaps > 0 ? STALL_SPEED_MS * 0.85 : STALL_SPEED_MS;
+    const stallSpeed = controls.flaps > 0
+      ? (params.stallSpeedMs ?? STALL_SPEED_MS) * 0.85
+      : (params.stallSpeedMs ?? STALL_SPEED_MS);
     const stallMargin = inRoundout ? 8 : 2;
     this.isStalled =
       !onGround &&
@@ -340,7 +388,7 @@ export class SimpleFlightModel {
           state.velocity.y = THREE.MathUtils.lerp(state.velocity.y, targetVy, 5 * dt);
         }
       }
-    } else if (onGround && speed > 1) {
+    } else if (onGround && speed > 1 && controls.brakes <= 0) {
       const idleBlend = 1 - THREE.MathUtils.clamp(controls.throttle, 0, 1);
       const rollMu = 0.016 + idleBlend * idleBlend * 0.072;
       const groundDecel = rollMu * 9.80665 + (0.012 + idleBlend * 0.02) * speed;
@@ -348,9 +396,14 @@ export class SimpleFlightModel {
         _vHat.copy(state.velocity).normalize().negate(),
         groundDecel * dt,
       );
-      const rotateLift = speed > ROTATE_SPEED_MS * 0.92;
+      const heavyJetRoll = (params.groundRollLiftScale ?? 1) < 1;
+      const rotateLift =
+        speed > rotateSpeed * 0.88 && (!heavyJetRoll || pitchingUp);
+      const liftScale =
+        (rotateSpeed > ROTATE_SPEED_MS * 1.2 ? 1.05 : 0.85) *
+        (params.groundRollLiftScale ?? 1);
       if (rotateLift) {
-        const liftN = qDyn * params.wingAreaM2 * liftCoeff * 0.85;
+        const liftN = qDyn * params.wingAreaM2 * liftCoeff * liftScale;
         state.velocity.addScaledVector(_up, (liftN / params.massKg) * dt);
       }
       if (inRoundout && pitchingUp) {
@@ -482,8 +535,10 @@ export class SimpleFlightModel {
       }
     }
 
-    const grounded = state.position.y <= minY + 0.08;
-    if (grounded) {
+    const grounded = state.position.y <= minY + 0.15;
+    const aglFinal = state.position.y - this.groundYFiltered! - params.gearOffsetM;
+    const onWheelsFinal = weightOnWheels(aglFinal, state.velocity.y) || grounded;
+    if (onWheelsFinal) {
       const latRoll = Math.pow(0.985, dt * 60);
       _fwdGround.copy(_forward);
       _fwdGround.y = 0;
@@ -495,12 +550,23 @@ export class SimpleFlightModel {
           .sub(_fwdGround.clone().multiplyScalar(vFwd));
         state.velocity.sub(vLat.multiplyScalar(1 - latRoll));
         if (controls.brakes > 0) {
-          // Firm pedal ~2.6 m/s² — not an instant velocity wipe
-          const brakeDecel = 3.2 * controls.brakes;
-          if (Math.abs(vFwd) > 0.02) {
-            const sign = Math.sign(vFwd) || 1;
-            const dV = Math.min(Math.abs(vFwd), brakeDecel * dt);
-            state.velocity.sub(_fwdGround.multiplyScalar(sign * dV));
+          if (brakeHold) {
+            if (Math.abs(vFwd) > 0.01) {
+              state.velocity.sub(_fwdGround.multiplyScalar(vFwd));
+            }
+          } else {
+            const speedAbs = Math.abs(vFwd);
+            const rollout = THREE.MathUtils.clamp(speedAbs / 50, 0, 1);
+            const massBoost =
+              1 + Math.log10(Math.max(params.massKg, 800) / 1000) * 0.42;
+            const brakeDecel =
+              (1.5 + 3.4 * rollout) * controls.brakes * massBoost;
+            const lowSpeedScale = THREE.MathUtils.clamp(speedAbs / 6, 0.35, 1);
+            if (speedAbs > 0.05) {
+              const sign = Math.sign(vFwd) || 1;
+              const dV = Math.min(speedAbs, brakeDecel * lowSpeedScale * dt);
+              state.velocity.sub(_fwdGround.multiplyScalar(sign * dV));
+            }
           }
         } else if (controls.throttle <= 0.12 && speed < 1.8) {
           const idleDamp = Math.pow(0.88, dt * 60);
@@ -526,7 +592,7 @@ export class SimpleFlightModel {
     this.headingDeg =
       (THREE.MathUtils.radToDeg(Math.atan2(_forward.x, -_forward.z)) + 360) % 360;
 
-    return grounded;
+    return onWheelsFinal;
   }
 }
 
