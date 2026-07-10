@@ -28,7 +28,8 @@
     "check:brakes-fleet": "node scripts/check-brakes-fleet.mjs",
     "check:map": "node scripts/check-map.mjs",
     "check:idle": "node scripts/check-idle-throttle.mjs",
-    "check:air-pitch": "npx tsx scripts/check-air-pitch.mjs"
+    "check:air-pitch": "npx tsx scripts/check-air-pitch.mjs",
+    "check:autopilot": "npx tsx scripts/check-autopilot.mjs"
   },
   "devDependencies": {
     "@gltf-transform/core": "^4.4.1",

@@ -124,7 +124,12 @@ export function drawTape(
   }
 }
 
-export function drawStatusBar(ctx: CanvasRenderingContext2D, t: FlightTelemetry, w: number): void {
+export function drawStatusBar(
+  ctx: CanvasRenderingContext2D,
+  t: FlightTelemetry,
+  w: number,
+  autopilotOn = false,
+): void {
   ctx.fillStyle = 'rgba(0,0,0,0.45)';
   ctx.fillRect(0, 0, w, 28);
   ctx.fillStyle = '#e8f0ff';
@@ -132,11 +137,14 @@ export function drawStatusBar(ctx: CanvasRenderingContext2D, t: FlightTelemetry,
   ctx.textAlign = 'left';
   const gear = t.gearDown ? 'DN' : 'UP';
   const flaps = t.flaps > 0 ? 'FULL' : 'UP';
-  ctx.fillText(
-    `THR ${(t.throttle * 100).toFixed(0)}%  IAS ${t.airspeedKts.toFixed(0)}kt  FLAPS ${flaps}  GEAR ${gear}  ${t.onGround ? 'GND' : 'AIR'}  α ${t.alphaDeg.toFixed(0)}°`,
-    12,
-    18,
-  );
+  const prefix = `THR ${(t.throttle * 100).toFixed(0)}%  IAS ${t.airspeedKts.toFixed(0)}kt  FLAPS ${flaps}  GEAR ${gear}  ${t.onGround ? 'GND' : 'AIR'}  α ${t.alphaDeg.toFixed(0)}°`;
+  ctx.fillText(prefix, 12, 18);
+  if (autopilotOn) {
+    const prefixW = ctx.measureText(prefix).width;
+    ctx.fillStyle = '#5dff9a';
+    ctx.font = 'bold 12px system-ui';
+    ctx.fillText('  AP ON', 12 + prefixW, 18);
+  }
 }
 
 export function drawFlightWarnings(

@@ -13,6 +13,7 @@ import { EngineAudio } from '../audio/EngineAudio.ts';
 import { LoadingScreen } from '../ui/LoadingScreen.ts';
 import { SpawnPanel, type SpawnRequest } from '../ui/SpawnPanel.ts';
 import { NavigationMap } from '../ui/NavigationMap.ts';
+import { Autopilot } from '../avionics/Autopilot.ts';
 import { getGearDebug } from '../rendering/landingGear.ts';
 import type { TileMap } from 'three-tile';
 
@@ -33,6 +34,7 @@ export class Game {
   private aircraft: AircraftInstance | null = null;
   private cameraRig: CameraRig | null = null;
   private flightControls: FlightControls | null = null;
+  private readonly autopilot = new Autopilot();
 
   private phase: GamePhase = 'menu';
   private physicsAccumulator = 0;
@@ -90,6 +92,7 @@ export class Game {
 
   private async startFlight(req: SpawnRequest): Promise<void> {
     this.phase = 'loading';
+    this.autopilot.setEnabled(false);
     this.spawnPanel.hide();
     this.loadingScreen.setMessage('Loading terrain…');
     this.loadingScreen.setProgress(0.1);
@@ -220,7 +223,40 @@ export class Game {
     this.lastTime = now;
 
     if (this.phase === 'flying' && this.aircraft && this.flightControls && this.cameraRig) {
+      if (this.input.wasPressed('KeyP')) {
+        const course = this.navMap.getDesiredHeading();
+        const telemPeek = this.aircraft.getTelemetry();
+        const canArm =
+          course != null && !telemPeek.onGround && telemPeek.altitudeFt * 0.3048 > 20;
+        this.autopilot.toggle(canArm, telemPeek.pitchDeg);
+      }
+
+      const manualRoll =
+        this.input.isDown('KeyA') || this.input.isDown('KeyD');
+      if (this.autopilot.isEnabled() && manualRoll) {
+        this.autopilot.setEnabled(false);
+      }
+      this.flightControls.autopilotAxes = this.autopilot.isEnabled();
       this.flightControls.update(dt);
+
+      const telemPre = this.aircraft.getTelemetry();
+      const geoEarly = this.terrain.localToGeo(this.aircraft.root.position);
+      this.navMap.updatePlayer(geoEarly.lat, geoEarly.lon, telemPre.headingDeg);
+      this.navMap.advanceRoute(geoEarly.lat, geoEarly.lon);
+      const courseForAp = this.navMap.getDesiredHeading();
+      const apOut = this.autopilot.update({
+        enabled: this.autopilot.isEnabled(),
+        courseDeg: courseForAp,
+        headingDeg: telemPre.headingDeg,
+        rollDeg: telemPre.rollDeg,
+        pitchDeg: telemPre.pitchDeg,
+        onGround: telemPre.onGround,
+        aglM: telemPre.altitudeFt * 0.3048,
+        manualRoll: false,
+        dt,
+      });
+      if (apOut.aileron != null) this.aircraft.controls.aileron = apOut.aileron;
+      if (apOut.elevator != null) this.aircraft.controls.elevator = apOut.elevator;
 
       this.physicsAccumulator += dt;
       while (this.physicsAccumulator >= PHYSICS_DT) {
@@ -282,7 +318,7 @@ export class Game {
       const courseDeg = this.navMap.getDesiredHeading();
 
       this.hud.canvas.style.opacity = '1';
-      this.hud.render(telem, this.cameraRig.mode, courseDeg);
+      this.hud.render(telem, this.cameraRig.mode, courseDeg, this.autopilot.isEnabled());
       this.audio.update(telem.throttle, telem.airspeedKts);
 
       this.input.endFrame();
@@ -304,6 +340,10 @@ export class Game {
 
   getDesiredHeading(): number | null {
     return this.navMap.getDesiredHeading();
+  }
+
+  isAutopilotOn(): boolean {
+    return this.autopilot.isEnabled();
   }
 
   isMapVisible(): boolean {

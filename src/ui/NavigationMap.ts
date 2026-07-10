@@ -312,6 +312,28 @@ export class NavigationMap {
     return bearingDeg(this.player.lat, this.player.lon, next.lat, next.lon);
   }
 
+  /**
+   * Drop intermediate waypoints once close enough (keeps the final destination).
+   * Returns true if the active waypoint changed.
+   */
+  advanceRoute(lat: number, lon: number, passKm = 4): boolean {
+    if (this.route.length <= 1) return false;
+    let changed = false;
+    while (
+      this.route.length > 1 &&
+      haversineKm(lat, lon, this.route[0].lat, this.route[0].lon) < passKm
+    ) {
+      this.route.shift();
+      changed = true;
+    }
+    if (changed) {
+      this.syncRouteList();
+      this.onRouteChange?.(this.route);
+      if (this.visible) this.draw();
+    }
+    return changed;
+  }
+
   clearRoute(): void {
     this.route.length = 0;
     this.departure = null;

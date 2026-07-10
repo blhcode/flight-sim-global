@@ -38,6 +38,7 @@ Open **http://localhost:5173**, pick an aircraft and airport, then click **Load 
 | C | Cycle camera (cockpit → gear → outside → chase) |
 | T | Cycle terrain texture (satellite / roadmap) |
 | M | Toggle navigation map |
+| P | Toggle autopilot (follows selected route heading) |
 
 Click the 3D view after loading so keyboard input is focused.
 
@@ -55,6 +56,7 @@ When the **DHC-6 Twin Otter** is selected, a **Weight** option appears on the sp
 3. Type **Departure** and **Destination** (ICAO/IATA/name), then **Set route** — or click airports on the map
 4. Long-haul routes draw as curved great-circle paths; a pink course bug on the HDG gauge shows the heading to fly
 5. Drag to pan, scroll or **+/−** to zoom, **Clear route** to reset
+6. After takeoff, press **P** to engage autopilot — it banks toward the pink course bug and holds the pitch you had when you engaged. Press **P** again or roll with **A/D** to disconnect.
 
 The spawn screen also shows each aircraft’s approximate **rotate / liftoff** speed.
 

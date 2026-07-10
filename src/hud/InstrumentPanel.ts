@@ -34,13 +34,14 @@ export class InstrumentPanel {
     telemetry: FlightTelemetry,
     cameraMode: CameraMode,
     courseDeg: number | null = null,
+    autopilotOn = false,
   ): void {
     const ctx = this.ctx;
     const w = window.innerWidth;
     const h = window.innerHeight;
     ctx.clearRect(0, 0, w, h);
 
-    drawStatusBar(ctx, telemetry, w);
+    drawStatusBar(ctx, telemetry, w, autopilotOn);
 
     drawFlightWarnings(ctx, telemetry, w, h);
 
@@ -82,5 +83,13 @@ export class InstrumentPanel {
     ctx.font = '11px system-ui';
     ctx.textAlign = 'right';
     ctx.fillText(`CAM ${cameraMode.toUpperCase()}`, w - 16, 48);
+
+    if (autopilotOn) {
+      ctx.fillStyle = 'rgba(0,0,0,0.35)';
+      ctx.fillRect(w - 140, 58, 128, 22);
+      ctx.fillStyle = '#5dff9a';
+      ctx.font = 'bold 11px system-ui';
+      ctx.fillText('AP HDG', w - 16, 74);
+    }
   }
 }

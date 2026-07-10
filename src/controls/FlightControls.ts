@@ -13,6 +13,8 @@ export class FlightControls {
   private readonly aircraft: AircraftInstance;
   private readonly onCameraCycle: () => void;
   private readonly onTextureCycle: () => void;
+  /** When true, skip keyboard pitch/roll so AP can drive those axes. */
+  autopilotAxes = false;
 
   constructor(
     input: InputManager,
@@ -28,6 +30,7 @@ export class FlightControls {
 
   update(dt: number): void {
     const c = this.aircraft.controls;
+    const apAxes = this.autopilotAxes;
     const agl = this.aircraft.body?.aglM ?? 0;
     const vs = this.aircraft.body?.verticalSpeed ?? 0;
     const kts = (this.aircraft.body?.indicatedAirspeed ?? 0) * MS_TO_KTS;
@@ -36,12 +39,12 @@ export class FlightControls {
     const onFinal = !pitchLocked && agl < 20 && kts > 38 && kts < 85;
     const onLowAlt = !weightOnWheels(agl, vs) && agl < 50;
 
-    const pitchUp = this.input.isDown('KeyW');
-    const pitchDown = this.input.isDown('KeyS');
+    const pitchUp = !apAxes && this.input.isDown('KeyW');
+    const pitchDown = !apAxes && this.input.isDown('KeyS');
 
     if (pitchLocked) {
       c.elevator *= 0.5;
-    } else {
+    } else if (!apAxes) {
       let rate = 0.34 * dt;
       if (onFinal && pitchUp) rate = 2.6 * dt;
       else if (onFinal) rate = 1.3 * dt;
@@ -58,12 +61,14 @@ export class FlightControls {
     }
 
     const rollRate = pitchLocked ? 0.95 * dt : onFinal ? 4 * dt : 0.95 * dt;
-    const rollLeft = this.input.isDown('KeyA');
-    const rollRight = this.input.isDown('KeyD');
+    const rollLeft = !apAxes && this.input.isDown('KeyA');
+    const rollRight = !apAxes && this.input.isDown('KeyD');
 
-    if (rollLeft) c.aileron = Math.min(1, c.aileron + rollRate);
-    else if (rollRight) c.aileron = Math.max(-1, c.aileron - rollRate);
-    else c.aileron *= 0.72;
+    if (!apAxes) {
+      if (rollLeft) c.aileron = Math.min(1, c.aileron + rollRate);
+      else if (rollRight) c.aileron = Math.max(-1, c.aileron - rollRate);
+      else c.aileron *= 0.72;
+    }
 
     if (this.input.isDown('KeyQ')) c.rudder = Math.min(1, c.rudder + rollRate);
     else if (this.input.isDown('KeyE')) c.rudder = Math.max(-1, c.rudder - rollRate);

@@ -24,3 +24,6 @@ Thumbs.db
 /tmp/
 playwright-report/
 test-results/
+
+# Separate GitHub Pages repo (blhcode/fsg → /fsg)
+/site/
