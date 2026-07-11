@@ -10,6 +10,13 @@ export interface GeoPoint {
   label?: string;
 }
 
+interface RunwayInfo {
+  id: string;
+  hdg: number;
+  lat?: number;
+  lon?: number;
+}
+
 interface AirportRecord {
   iata: string;
   icao: string;
@@ -19,6 +26,20 @@ interface AirportRecord {
   lat: number;
   lon: number;
   elevM: number;
+  /** Primary runway low-end true heading (degrees), from OurAirports. */
+  rwyHdg?: number;
+  /** Primary runway ends, e.g. "16R/34L". */
+  rwy?: string;
+  /** All open runways (preferred). */
+  rwys?: RunwayInfo[];
+}
+
+function airportRunways(ap: AirportRecord): RunwayInfo[] {
+  if (ap.rwys?.length) return ap.rwys;
+  if (ap.rwyHdg != null && Number.isFinite(ap.rwyHdg)) {
+    return [{ id: ap.rwy ?? `${Math.round(ap.rwyHdg)}`, hdg: ap.rwyHdg }];
+  }
+  return [];
 }
 
 export type AirportCodeMode = 'icao' | 'iata';
@@ -40,6 +61,50 @@ export function bearingDeg(
   const x =
     Math.cos(φ1) * Math.sin(φ2) - Math.sin(φ1) * Math.cos(φ2) * Math.cos(Δλ);
   return ((Math.atan2(y, x) * 180) / Math.PI + 360) % 360;
+}
+
+/** Destination point given start, true bearing, and distance in km. */
+export function destinationPoint(
+  lat: number,
+  lon: number,
+  bearingDegValue: number,
+  distKm: number,
+): GeoPoint {
+  const R = 6371;
+  const δ = distKm / R;
+  const θ = (bearingDegValue * Math.PI) / 180;
+  const φ1 = (lat * Math.PI) / 180;
+  const λ1 = (lon * Math.PI) / 180;
+  const sinφ2 =
+    Math.sin(φ1) * Math.cos(δ) + Math.cos(φ1) * Math.sin(δ) * Math.cos(θ);
+  const φ2 = Math.asin(Math.max(-1, Math.min(1, sinφ2)));
+  const λ2 =
+    λ1 +
+    Math.atan2(
+      Math.sin(θ) * Math.sin(δ) * Math.cos(φ1),
+      Math.cos(δ) - Math.sin(φ1) * Math.sin(φ2),
+    );
+  return {
+    lat: (φ2 * 180) / Math.PI,
+    lon: (((λ2 * 180) / Math.PI + 540) % 360) - 180,
+  };
+}
+
+function headingErrorDeg(fromDeg: number, toDeg: number): number {
+  let err = toDeg - fromDeg;
+  while (err > 180) err -= 360;
+  while (err < -180) err += 360;
+  return err;
+}
+
+/** Pick the runway end whose heading best matches an inbound course. */
+function approachHeadingDeg(rwyHdg: number, inboundDeg: number): number {
+  const a = ((rwyHdg % 360) + 360) % 360;
+  const b = (a + 180) % 360;
+  return Math.abs(headingErrorDeg(inboundDeg, a)) <=
+    Math.abs(headingErrorDeg(inboundDeg, b))
+    ? a
+    : b;
 }
 
 function toCartesian(lat: number, lon: number): [number, number, number] {
@@ -188,7 +253,7 @@ export class NavigationMap {
     this.destResults = this.element.querySelector('[data-field="dest"] .nav-map-search-results') as HTMLElement;
     this.findResults = this.element.querySelector('[data-field="find"] .nav-map-search-results') as HTMLElement;
     this.hintEl.textContent =
-      'Type departure + destination, then Set route · Or click airports on the map';
+      'Gold lines = every nearby runway · Pink = route destination · Zoom in for labels';
 
     this.element.querySelector('.nav-map-close')?.addEventListener('click', () => this.hide());
     this.element.querySelectorAll('[data-action]').forEach((btn) => {
@@ -310,6 +375,34 @@ export class NavigationMap {
     const next = this.route[0];
     if (!next) return null;
     return bearingDeg(this.player.lat, this.player.lon, next.lat, next.lon);
+  }
+
+  /** Test / automation — inspect runway lineup state. */
+  getRunwayAidDebug() {
+    const yssy = airportList.find((x) => x.icao === 'YSSY');
+    return {
+      departure: this.departure
+        ? {
+            icao: this.departure.icao,
+            rwy: this.departure.rwy ?? null,
+            rwyHdg: this.departure.rwyHdg ?? null,
+          }
+        : null,
+      destination: this.destination
+        ? {
+            icao: this.destination.icao,
+            rwy: this.destination.rwy ?? null,
+            rwyHdg: this.destination.rwyHdg ?? null,
+          }
+        : null,
+      zoomDeg: this.zoomDeg,
+      viewLat: this.viewLat,
+      viewLon: this.viewLon,
+      followPlayer: this.followPlayer,
+      sampleYssy: yssy
+        ? { rwy: yssy.rwy ?? null, rwyHdg: yssy.rwyHdg ?? null }
+        : null,
+    };
   }
 
   /**
@@ -491,7 +584,7 @@ export class NavigationMap {
     this.destInput.value = this.formatAirport(dest);
     this.setOdRoute(dep, dest);
     this.hintEl.textContent =
-      'Type departure + destination, then Set route · Or click airports on the map';
+      'Pink = destination runway · Green = departure · Gold = nearby runways';
   }
 
   private setOdRoute(dep: AirportRecord, dest: AirportRecord): void {
@@ -704,6 +797,7 @@ export class NavigationMap {
     b: GeoPoint,
     color: string,
     dashed: boolean,
+    lineWidth = 2,
   ): void {
     const distKm = haversineKm(a.lat, a.lon, b.lat, b.lon);
     const samples = greatCirclePath(
@@ -714,7 +808,7 @@ export class NavigationMap {
       pathSegmentCount(distKm),
     );
     ctx.strokeStyle = color;
-    ctx.lineWidth = 2;
+    ctx.lineWidth = lineWidth;
     ctx.setLineDash(dashed ? [6, 4] : []);
     ctx.beginPath();
     let started = false;
@@ -772,6 +866,244 @@ export class NavigationMap {
     }
   }
 
+  private runwayEndLabel(rwy: RunwayInfo, approachHdg: number): string {
+    const [le, he] = rwy.id.split('/');
+    if (le && he) {
+      const leHdg = ((rwy.hdg % 360) + 360) % 360;
+      const heHdg = (leHdg + 180) % 360;
+      const useLe =
+        Math.abs(headingErrorDeg(approachHdg, leHdg)) <=
+        Math.abs(headingErrorDeg(approachHdg, heHdg));
+      return `RWY ${useLe ? le : he}`;
+    }
+    const num = Math.round(approachHdg / 10) % 36 || 36;
+    return `RWY ${String(num).padStart(2, '0')}`;
+  }
+
+  /**
+   * Extended centerline for one runway.
+   * Uses runway midpoints when available so parallel strips don't overlap.
+   */
+  private drawOneRunway(
+    ctx: CanvasRenderingContext2D,
+    ap: AirportRecord,
+    rwy: RunwayInfo,
+    opts: {
+      approach?: boolean;
+      label?: boolean;
+      color: string;
+      emphasize?: boolean;
+    },
+  ): void {
+    if (!Number.isFinite(rwy.hdg)) return;
+    const lat = rwy.lat ?? ap.lat;
+    const lon = rwy.lon ?? ap.lon;
+
+    let axisHdg = ((rwy.hdg % 360) + 360) % 360;
+    if (opts.approach) {
+      const inbound = bearingDeg(this.player.lat, this.player.lon, lat, lon);
+      axisHdg = approachHeadingDeg(rwy.hdg, inbound);
+    }
+
+    const recip = (axisHdg + 180) % 360;
+    const kmPerPx = (this.zoomDeg * 111) / Math.max(this.canvas.height, 1);
+    const approachKm = clamp(this.canvas.height * 0.38 * kmPerPx, 6, 420);
+    const beyondKm = clamp(this.canvas.height * 0.1 * kmPerPx, 2, 120);
+    const stubKm = clamp(this.canvas.height * 0.025 * kmPerPx, 0.7, 25);
+    const finalKm = opts.approach ? approachKm : Math.max(beyondKm, approachKm * 0.55);
+    const outKm = opts.approach ? beyondKm : finalKm;
+    const width = opts.emphasize ? 3.5 : opts.approach ? 3 : 2.2;
+
+    const finalStart = destinationPoint(lat, lon, recip, finalKm);
+    const beyond = destinationPoint(lat, lon, axisHdg, outKm);
+    this.strokeGreatCircle(ctx, finalStart, beyond, opts.color, true, width);
+
+    const stubA = destinationPoint(lat, lon, recip, stubKm);
+    const stubB = destinationPoint(lat, lon, axisHdg, stubKm);
+    ctx.strokeStyle = opts.color;
+    ctx.lineWidth = width + 0.5;
+    ctx.setLineDash([]);
+    ctx.beginPath();
+    const a = this.geoToScreen(stubA.lat, stubA.lon);
+    const b = this.geoToScreen(stubB.lat, stubB.lon);
+    ctx.moveTo(a.x, a.y);
+    ctx.lineTo(b.x, b.y);
+    ctx.stroke();
+
+    if (opts.label) {
+      const labelDist = Math.min(finalKm * 0.35, Math.max(4, stubKm * 4));
+      const labelAt = destinationPoint(lat, lon, recip, labelDist);
+      const p = this.geoToScreen(labelAt.lat, labelAt.lon);
+      if (p.x > 4 && p.x < this.canvas.width - 4 && p.y > 10 && p.y < this.canvas.height - 4) {
+        ctx.fillStyle = opts.color;
+        ctx.font = opts.emphasize ? 'bold 10px system-ui' : '9px system-ui';
+        ctx.textAlign = 'center';
+        const text = opts.approach
+          ? this.runwayEndLabel(rwy, axisHdg)
+          : `RWY ${rwy.id}`;
+        ctx.fillText(text, p.x, p.y - 5);
+      }
+    }
+  }
+
+  /** Draw every runway at an airport. */
+  private drawAirportRunways(
+    ctx: CanvasRenderingContext2D,
+    ap: AirportRecord,
+    opts: {
+      approach?: boolean;
+      label?: boolean;
+      color: string;
+      /** When approaching, boost the runway that best matches inbound. */
+      preferInbound?: boolean;
+    },
+  ): void {
+    const rwys = airportRunways(ap);
+    if (!rwys.length) return;
+
+    let preferredIdx = 0;
+    if (opts.preferInbound || opts.approach) {
+      const inbound = bearingDeg(this.player.lat, this.player.lon, ap.lat, ap.lon);
+      let best = Infinity;
+      rwys.forEach((r, i) => {
+        const chosen = approachHeadingDeg(r.hdg, inbound);
+        const err = Math.abs(headingErrorDeg(inbound, chosen));
+        if (err < best) {
+          best = err;
+          preferredIdx = i;
+        }
+      });
+    }
+
+    rwys.forEach((rwy, i) => {
+      const emphasize = i === preferredIdx;
+      this.drawOneRunway(ctx, ap, rwy, {
+        approach: opts.approach,
+        // Label every strip when on-field / zoomed in; otherwise only the preferred one
+        label:
+          !!opts.label &&
+          (rwys.length === 1 ||
+            emphasize ||
+            !opts.approach ||
+            this.zoomDeg <= 1.3),
+        color: emphasize
+          ? opts.color
+          : opts.color.replace(/[\d.]+\)$/, (m) => {
+              const a = parseFloat(m);
+              return `${Math.max(0.35, a * 0.55)})`;
+            }),
+        emphasize,
+      });
+    });
+  }
+
+  private airportKey(ap: AirportRecord): string {
+    return `${ap.icao}|${ap.lat}|${ap.lon}`;
+  }
+
+  private drawRunwayAids(ctx: CanvasRenderingContext2D): void {
+    const drawn = new Set<string>();
+
+    if (this.departure && airportRunways(this.departure).length) {
+      this.drawAirportRunways(ctx, this.departure, {
+        approach: false,
+        label: true,
+        color: 'rgba(74, 222, 128, 0.75)',
+      });
+      drawn.add(this.airportKey(this.departure));
+    }
+
+    if (this.destination && airportRunways(this.destination).length) {
+      this.drawAirportRunways(ctx, this.destination, {
+        approach: true,
+        label: true,
+        preferInbound: true,
+        color: 'rgba(255, 107, 203, 0.9)',
+      });
+      drawn.add(this.airportKey(this.destination));
+    } else if (this.route.length > 0) {
+      const last = this.route[this.route.length - 1];
+      const hit = airportList.find(
+        (a) =>
+          airportRunways(a).length > 0 &&
+          haversineKm(a.lat, a.lon, last.lat, last.lon) < 2.5,
+      );
+      if (hit && !drawn.has(this.airportKey(hit))) {
+        this.drawAirportRunways(ctx, hit, {
+          approach: true,
+          label: true,
+          preferInbound: true,
+          color: 'rgba(255, 107, 203, 0.9)',
+        });
+        drawn.add(this.airportKey(hit));
+      }
+    }
+
+    // Nearby airports when zoomed in (no route needed)
+    if (this.zoomDeg <= 4) {
+      const nearLimitKm = clamp(this.zoomDeg * 80, 25, 120);
+      const withDist = this.airportsInView()
+        .filter((a) => airportRunways(a).length > 0)
+        .map((a) => ({
+          ap: a,
+          dist: haversineKm(this.player.lat, this.player.lon, a.lat, a.lon),
+        }))
+        .filter((x) => x.dist < nearLimitKm)
+        .sort((a, b) => a.dist - b.dist);
+
+      if (withDist.length === 0 || withDist[0].dist > 15) {
+        const latPad = Math.max(this.zoomDeg * 1.5, 0.35);
+        const lonPad =
+          latPad / Math.max(0.35, Math.cos((this.player.lat * Math.PI) / 180));
+        let best: { ap: AirportRecord; dist: number } | null = null;
+        for (const a of airportList) {
+          if (!airportRunways(a).length) continue;
+          if (Math.abs(a.lat - this.player.lat) > latPad) continue;
+          if (Math.abs(a.lon - this.player.lon) > lonPad) continue;
+          const dist = haversineKm(this.player.lat, this.player.lon, a.lat, a.lon);
+          if (dist >= nearLimitKm) continue;
+          if (!best || dist < best.dist) best = { ap: a, dist };
+        }
+        if (best && !withDist.some((x) => this.airportKey(x.ap) === this.airportKey(best!.ap))) {
+          withDist.unshift(best);
+        }
+      }
+
+      const nearest = withDist[0] ?? null;
+      let shown = 0;
+      for (const { ap, dist } of withDist) {
+        if (shown >= 5) break;
+        if (drawn.has(this.airportKey(ap))) continue;
+        const isNearest =
+          nearest != null && this.airportKey(ap) === this.airportKey(nearest.ap);
+        const onField = dist < 12;
+        this.drawAirportRunways(ctx, ap, {
+          approach: !onField,
+          label: isNearest || this.zoomDeg <= 1.8,
+          preferInbound: !onField,
+          color: isNearest
+            ? 'rgba(255, 196, 77, 0.95)'
+            : 'rgba(255, 196, 77, 0.5)',
+        });
+        drawn.add(this.airportKey(ap));
+        shown++;
+      }
+    }
+
+    if (
+      this.highlightedAirport &&
+      airportRunways(this.highlightedAirport).length &&
+      !drawn.has(this.airportKey(this.highlightedAirport))
+    ) {
+      this.drawAirportRunways(ctx, this.highlightedAirport, {
+        approach: true,
+        label: true,
+        preferInbound: true,
+        color: 'rgba(255, 196, 77, 0.9)',
+      });
+    }
+  }
+
   private draw(): void {
     const ctx = this.ctx;
     const w = this.canvas.width;
@@ -792,6 +1124,8 @@ export class NavigationMap {
       ctx.lineTo(viewCenter.x + (i * w * 0.48) / 3, h);
       ctx.stroke();
     }
+
+    this.drawRunwayAids(ctx);
 
     if (this.route.length > 0 || (this.departure && this.destination)) {
       this.drawGreatCircleRoute(ctx);
@@ -840,13 +1174,19 @@ export class NavigationMap {
 
     const plane = this.geoToScreen(this.player.lat, this.player.lon);
     const nose = (this.player.headingDeg * Math.PI) / 180;
-    ctx.fillStyle = '#4ade80';
+    const tip = 11;
+    const wing = 8;
     ctx.beginPath();
-    ctx.moveTo(plane.x + Math.sin(nose) * 10, plane.y - Math.cos(nose) * 10);
-    ctx.lineTo(plane.x + Math.sin(nose + 2.4) * 7, plane.y - Math.cos(nose + 2.4) * 7);
-    ctx.lineTo(plane.x + Math.sin(nose - 2.4) * 7, plane.y - Math.cos(nose - 2.4) * 7);
+    ctx.moveTo(plane.x + Math.sin(nose) * tip, plane.y - Math.cos(nose) * tip);
+    ctx.lineTo(plane.x + Math.sin(nose + 2.4) * wing, plane.y - Math.cos(nose + 2.4) * wing);
+    ctx.lineTo(plane.x + Math.sin(nose - 2.4) * wing, plane.y - Math.cos(nose - 2.4) * wing);
     ctx.closePath();
+    ctx.fillStyle = '#3ddc84';
     ctx.fill();
+    ctx.strokeStyle = 'rgba(6, 10, 16, 0.9)';
+    ctx.lineWidth = 2;
+    ctx.lineJoin = 'round';
+    ctx.stroke();
 
     ctx.fillStyle = 'rgba(200, 220, 240, 0.9)';
     ctx.font = '10px system-ui';

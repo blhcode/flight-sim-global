@@ -8,6 +8,7 @@
     "build": "tsc && vite build",
     "preview": "vite preview",
     "build:airports": "node scripts/build-airports.mjs",
+    "enrich:runways": "node scripts/enrich-runways.mjs",
     "check:satellite": "node scripts/check-satellite.mjs",
     "debug:satellite": "node scripts/debug-satellite-full.mjs",
     "debug:ground": "node scripts/debug-ground-return.mjs",
@@ -29,7 +30,8 @@
     "check:map": "node scripts/check-map.mjs",
     "check:idle": "node scripts/check-idle-throttle.mjs",
     "check:air-pitch": "npx tsx scripts/check-air-pitch.mjs",
-    "check:autopilot": "npx tsx scripts/check-autopilot.mjs"
+    "check:autopilot": "npx tsx scripts/check-autopilot.mjs",
+    "check:runway-lineup": "npx tsx scripts/check-runway-lineup.mjs"
   },
   "devDependencies": {
     "@gltf-transform/core": "^4.4.1",

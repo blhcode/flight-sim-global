@@ -27,3 +27,6 @@ test-results/
 
 # Separate GitHub Pages repo (blhcode/fsg → /fsg)
 /site/
+
+# OurAirports download cache for enrich-runways.mjs
+/scripts/data/

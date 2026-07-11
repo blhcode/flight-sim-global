@@ -10,6 +10,7 @@
 ## Airport Data
 
 - [OpenFlights Airport Database](https://openflights.org/data.html) (ODbL)
+- Primary runway headings — [OurAirports](https://ourairports.com/data/) runways data (Unlicense)
 
 ## Aircraft Models
 

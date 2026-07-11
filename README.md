@@ -11,6 +11,7 @@ Fly anywhere on Earth in your browser — real satellite terrain, multiple aircr
 - **Real 3D models** — GLB aircraft with procedural fallbacks if a model fails to load
 - **Flight physics** — 120 Hz simulation with stall warnings, flares, coordinated turns, and weight-aware braking
 - **Navigation map** — Press **M** to see your position, nearby airports, and click to build a route
+- **Runway lineup** — Destination airports show an extended primary-runway centerline on the map so you can line up for landing
 - **7,600+ airports** — Spawn by ICAO/IATA code (e.g. `YSSY`, `TNCS`) or lat/lon
 
 ## Quick start
@@ -55,8 +56,9 @@ When the **DHC-6 Twin Otter** is selected, a **Weight** option appears on the sp
 2. Your position is the green arrow; yellow dots are airports
 3. Type **Departure** and **Destination** (ICAO/IATA/name), then **Set route** — or click airports on the map
 4. Long-haul routes draw as curved great-circle paths; a pink course bug on the HDG gauge shows the heading to fly
-5. Drag to pan, scroll or **+/−** to zoom, **Clear route** to reset
-6. After takeoff, press **P** to engage autopilot — it banks toward the pink course bug and holds the pitch you had when you engaged. Press **P** again or roll with **A/D** to disconnect.
+5. A **pink runway lineup line** appears at the destination (primary runway extended centerline); departure shows a green axis when set
+6. Drag to pan, scroll or **+/−** to zoom, **Clear route** to reset
+7. After takeoff, press **P** to engage autopilot — it banks toward the pink course bug and holds the pitch you had when you engaged. Press **P** again or roll with **A/D** to disconnect.
 
 The spawn screen also shows each aircraft’s approximate **rotate / liftoff** speed.
 

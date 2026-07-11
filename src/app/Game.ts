@@ -342,6 +342,11 @@ export class Game {
     return this.navMap.getDesiredHeading();
   }
 
+  /** Test / automation — runway lineup debug snapshot. */
+  getRunwayAidDebug() {
+    return this.navMap.getRunwayAidDebug();
+  }
+
   isAutopilotOn(): boolean {
     return this.autopilot.isEnabled();
   }
