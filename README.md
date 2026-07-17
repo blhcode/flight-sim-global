@@ -4,6 +4,14 @@ Fly anywhere on Earth in your browser — real satellite terrain, multiple aircr
 
 **[Play now → blhcode.github.io/flight-sim-global](https://blhcode.github.io/flight-sim-global/)**
 
+## Suggestions
+
+Have an idea for the game? Open a GitHub issue — templates cover **feature ideas**, **aircraft requests**, and **bug reports**:
+
+**[Submit a suggestion →](https://github.com/blhcode/flight-sim-global/issues/new/choose)**
+
+Browse existing requests: [github.com/blhcode/flight-sim-global/issues](https://github.com/blhcode/flight-sim-global/issues)
+
 ## Features
 
 - **Global terrain** — ArcGIS elevation and satellite imagery streamed via [three-tile](https://github.com/sxguojf/three-tile)

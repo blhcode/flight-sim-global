@@ -1,0 +1,53 @@
+name: Aircraft request
+description: Suggest a new aircraft to add to the fleet
+title: "[Aircraft]: "
+labels: ["suggestion", "aircraft"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Propose an aircraft for Flight Sim Global. Prefer models with a clear license (or a link to a free GLB / known open source).
+  - type: input
+    id: aircraft
+    attributes:
+      label: Aircraft
+      description: Type / variant name
+      placeholder: e.g. Airbus A320neo, Piper PA-28, C-130…
+    validations:
+      required: true
+  - type: dropdown
+    id: category
+    attributes:
+      label: Category
+      options:
+        - Light / GA prop
+        - Turboprop
+        - Narrow-body jet
+        - Wide-body / heavy
+        - Military / fighter
+        - Glider / specialty
+        - Other
+    validations:
+      required: true
+  - type: textarea
+    id: why
+    attributes:
+      label: Why this aircraft?
+      description: What would it add to the fleet that isn’t covered today?
+    validations:
+      required: true
+  - type: textarea
+    id: model
+    attributes:
+      label: Model / license notes (optional)
+      description: Link to a Sketchfab, FlightGear, or other source if you know one — include the license if possible.
+      placeholder: https://…
+    validations:
+      required: false
+  - type: checkboxes
+    id: license
+    attributes:
+      label: Licensing
+      options:
+        - label: I believe a freely usable 3D model exists (or I’m happy with a procedural placeholder at first)
+          required: false

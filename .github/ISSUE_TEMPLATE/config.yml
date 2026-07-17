@@ -1,0 +1,8 @@
+blank_issues_enabled: true
+contact_links:
+  - name: Play the game
+    url: https://blhcode.github.io/flight-sim-global/
+    about: Try Flight Sim Global in your browser before filing an issue.
+  - name: Trailer & overview
+    url: https://blhcode.github.io/fsg/
+    about: Watch the trailer and read how the game works.

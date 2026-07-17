@@ -1,0 +1,49 @@
+name: Bug report
+description: Something isn’t working as expected
+title: "[Bug]: "
+labels: ["bug"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Report a problem in the live game or when running from source.
+  - type: textarea
+    id: what
+    attributes:
+      label: What happened?
+      description: What went wrong?
+    validations:
+      required: true
+  - type: textarea
+    id: expected
+    attributes:
+      label: What did you expect?
+    validations:
+      required: true
+  - type: textarea
+    id: steps
+    attributes:
+      label: Steps to reproduce
+      description: Aircraft, airport, and what you did.
+      placeholder: |
+        1. Spawn Cessna at YSSY
+        2. …
+    validations:
+      required: true
+  - type: dropdown
+    id: where
+    attributes:
+      label: Where did you see this?
+      options:
+        - Live site (blhcode.github.io/flight-sim-global)
+        - Local npm run dev
+        - Both / not sure
+    validations:
+      required: true
+  - type: input
+    id: browser
+    attributes:
+      label: Browser (optional)
+      placeholder: e.g. Firefox 128, Chrome 126
+    validations:
+      required: false

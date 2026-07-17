@@ -1,0 +1,38 @@
+name: Feature idea
+description: Suggest a new feature or gameplay improvement
+title: "[Feature]: "
+labels: ["suggestion", "feature"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Thanks for helping shape Flight Sim Global. Describe the feature clearly so others can discuss it.
+  - type: textarea
+    id: summary
+    attributes:
+      label: What should we add?
+      description: One or two sentences describing the idea.
+      placeholder: e.g. ATC chatter on approach, weather layers, multiplayer traffic…
+    validations:
+      required: true
+  - type: textarea
+    id: why
+    attributes:
+      label: Why is this useful?
+      description: How would this improve flying or planning routes?
+    validations:
+      required: true
+  - type: textarea
+    id: details
+    attributes:
+      label: How might it work?
+      description: Optional — controls, UI, or examples from other sims.
+    validations:
+      required: false
+  - type: checkboxes
+    id: scope
+    attributes:
+      label: Fits a browser sim?
+      options:
+        - label: I understand this runs in the browser and should stay lightweight if possible
+          required: false
