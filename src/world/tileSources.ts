@@ -18,10 +18,27 @@ const MAPTILER_DEMO_KEY = 'get_your_own_key_QmavnBrQwNGsQ8YvPzZg';
 const GOOGLE_SATELLITE_URL =
   'https://gac-geo.googlecnapps.club/maps/vt?lyrs=s&x={x}&y={y}&z={z}';
 
+function isUsableMapTilerKey(key: string | undefined): key is string {
+  if (!key || !key.trim()) return false;
+  // Public MapTiler “get your own key” demo token is rate-limited / unreliable in production.
+  if (key === MAPTILER_DEMO_KEY || key.startsWith('get_your_own_key')) return false;
+  return true;
+}
+
 function satelliteProvider(): SatelliteProvider {
   const env = import.meta.env.VITE_SATELLITE_PROVIDER as SatelliteProvider | undefined;
-  if (env === 'google' || env === 'maptiler' || env === 'esri') return env;
-  return 'maptiler';
+  if (env === 'google' || env === 'maptiler' || env === 'esri') {
+    if (env === 'maptiler' && !isUsableMapTilerKey(import.meta.env.VITE_MAPTILER_KEY)) {
+      console.warn(
+        '[terrain] VITE_SATELLITE_PROVIDER=maptiler but no real VITE_MAPTILER_KEY — using google',
+      );
+      return 'google';
+    }
+    return env;
+  }
+  // No explicit provider: prefer MapTiler only with a real key; otherwise Google (no key, high zoom).
+  if (isUsableMapTilerKey(import.meta.env.VITE_MAPTILER_KEY)) return 'maptiler';
+  return 'google';
 }
 
 function createGoogleSource(maxLevel: number): ISource {
@@ -43,7 +60,10 @@ function createSatelliteSource(maxLevel: number): ISource {
   }
 
   if (provider === 'maptiler') {
-    const token = import.meta.env.VITE_MAPTILER_KEY ?? MAPTILER_DEMO_KEY;
+    const token = import.meta.env.VITE_MAPTILER_KEY;
+    if (!isUsableMapTilerKey(token)) {
+      return createGoogleSource(maxLevel);
+    }
     const src = new plugin.MapTilerSource({
       style: 'satellite-v2',
       token,

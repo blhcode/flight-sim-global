@@ -142,13 +142,17 @@ export class TerrainManager {
     const deadline = performance.now() + timeoutMs;
     let maxZ = 0;
     let stablePasses = 0;
+    let ready = false;
     while (performance.now() < deadline) {
       for (let i = 0; i < 3; i++) this.map.update(primeCam);
       const stats = this.collectImageryStats(minZ);
       maxZ = stats.maxZ;
       if (this.imageryReady(minZ, stats)) {
         stablePasses++;
-        if (stablePasses >= 5) break;
+        if (stablePasses >= 5) {
+          ready = true;
+          break;
+        }
       } else {
         stablePasses = 0;
       }
@@ -157,6 +161,13 @@ export class TerrainManager {
 
     this.map.updateInterval = savedInterval;
     this.map.LODThreshold = savedLod;
+    if (!ready) {
+      const stats = this.collectImageryStats(minZ);
+      console.warn(
+        '[terrain] satellite detail incomplete after wait',
+        { provider: currentSatelliteProviderName(), minZ, ...stats },
+      );
+    }
     return maxZ;
   }
 
