@@ -6,7 +6,7 @@ Fly anywhere on Earth in your browser — real satellite terrain, multiple aircr
 
 ## Suggestions
 
-Have an idea for the game? Open a GitHub issue — templates cover **feature ideas**, **aircraft requests**, and **bug reports**:
+Have an idea for the game? Open a GitHub issue — templates cover **feature ideas**, **aircraft requests**, and **bug reports**. Anyone with a free GitHub account can submit (you must be **signed in**):
 
 **[Submit a suggestion →](https://github.com/blhcode/flight-sim-global/issues/new/choose)**
 
