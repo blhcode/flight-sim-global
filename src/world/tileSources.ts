@@ -29,16 +29,17 @@ function satelliteProvider(): SatelliteProvider {
   const env = import.meta.env.VITE_SATELLITE_PROVIDER as SatelliteProvider | undefined;
   if (env === 'google' || env === 'maptiler' || env === 'esri') {
     if (env === 'maptiler' && !isUsableMapTilerKey(import.meta.env.VITE_MAPTILER_KEY)) {
+      // Allow explicit maptiler with demo key — still better than a dead Google mirror.
       console.warn(
-        '[terrain] VITE_SATELLITE_PROVIDER=maptiler but no real VITE_MAPTILER_KEY — using google',
+        '[terrain] Using MapTiler without VITE_MAPTILER_KEY (demo/public key). Add a free key in .env.local for reliability.',
       );
-      return 'google';
+      return 'maptiler';
     }
     return env;
   }
-  // No explicit provider: prefer MapTiler only with a real key; otherwise Google (no key, high zoom).
+  // Prefer MapTiler (high zoom). Google mirror is often slow/down; Esri caps at z13 (soft runways).
   if (isUsableMapTilerKey(import.meta.env.VITE_MAPTILER_KEY)) return 'maptiler';
-  return 'google';
+  return 'maptiler';
 }
 
 function createGoogleSource(maxLevel: number): ISource {
@@ -60,10 +61,9 @@ function createSatelliteSource(maxLevel: number): ISource {
   }
 
   if (provider === 'maptiler') {
-    const token = import.meta.env.VITE_MAPTILER_KEY;
-    if (!isUsableMapTilerKey(token)) {
-      return createGoogleSource(maxLevel);
-    }
+    const token = isUsableMapTilerKey(import.meta.env.VITE_MAPTILER_KEY)
+      ? import.meta.env.VITE_MAPTILER_KEY
+      : MAPTILER_DEMO_KEY;
     const src = new plugin.MapTilerSource({
       style: 'satellite-v2',
       token,
@@ -102,7 +102,9 @@ export function createImagerySource(mode: TextureMode, maxLevel = 17): ISource {
 
 export function createDemSource(maxLevel = 17): ISource {
   const src = new plugin.ArcGisDemSource();
-  src.maxLevel = Math.min(maxLevel, 13);
+  // Keep DEM a few levels under imagery so elevation loads finish and free the queue
+  // for sharp satellite tiles (runways are mostly flat at high zoom anyway).
+  src.maxLevel = Math.min(maxLevel, 12);
   return src;
 }
 
@@ -116,12 +118,32 @@ export function currentSatelliteProviderName(): SatelliteProvider {
 
 /** LOD during normal flight — must stay high or tiles merge after spawn prime. */
 export function satelliteLodThreshold(): number {
-  return satelliteProvider() === 'google' ? 3.5 : 3.2;
+  return satelliteProvider() === 'google' ? 4.5 : 3.5;
 }
 
-/** LOD while priming — slightly higher than normal. */
+/** LOD while priming — higher = finer tiles (three-tile: recommended 1–2, we push harder at spawn). */
 export function satellitePrimeLodThreshold(): number {
-  return satelliteProvider() === 'google' ? 4.0 : 3.6;
+  return satelliteProvider() === 'google' ? 6.0 : 4.5;
+}
+
+/** Parallel tile downloads. three-tile skips LOD when downloadingThreads+4 >= maxThreads. */
+export function satelliteMaxThreads(priming = false): number {
+  // Modest concurrency — flood the Google mirror and requests hang with zero progress.
+  if (satelliteProvider() === 'google') return priming ? 24 : 16;
+  return priming ? 20 : 14;
+}
+
+/** Zoom level that counts as sharp runway / low-altitude scenery for the active provider. */
+export function satelliteBestQualityMinZ(): number {
+  switch (satelliteProvider()) {
+    case 'google':
+      return 18;
+    case 'maptiler':
+      // MapTiler 512px @ z17 matches sharp taxiway paint (demo/prod).
+      return 16;
+    case 'esri':
+      return 13;
+  }
 }
 
 export function esriImageryTileUrl(z: number, x: number, y: number): string {

@@ -2,7 +2,15 @@ import * as THREE from 'three';
 import * as tt from 'three-tile';
 import 'three-tile/plugin';
 import type { TextureMode } from './tileSources.ts';
-import { createDemSource, createImagerySources, currentSatelliteProviderName, satelliteLodThreshold, satellitePrimeLodThreshold } from './tileSources.ts';
+import {
+  createDemSource,
+  createImagerySources,
+  currentSatelliteProviderName,
+  satelliteBestQualityMinZ,
+  satelliteLodThreshold,
+  satelliteMaxThreads,
+  satellitePrimeLodThreshold,
+} from './tileSources.ts';
 
 function nearestMeridian(lon: number): 0 | 90 | -90 {
   const options: (0 | 90 | -90)[] = [0, 90, -90];
@@ -34,6 +42,19 @@ export interface ImageryStats {
   brownNoMap: number;
   downloading: number;
 }
+
+export interface TileDetailResult {
+  maxZ: number;
+  ready: boolean;
+  stats: ImageryStats;
+}
+
+export type TileDetailProgress = (info: {
+  maxZ: number;
+  targetZ: number;
+  ready: boolean;
+  stats: ImageryStats;
+}) => void;
 
 /**
  * Keeps the aircraft near local (0,0,0) for float precision by offsetting the tile map.
@@ -71,6 +92,35 @@ export class TerrainManager {
     if (this.map) this.map.updateInterval = ms;
   }
 
+  /**
+   * Bypass TileMap's interval timer so every call actually runs LOD.
+   * `map.update()` often no-ops when called multiple times in the same tick.
+   */
+  private forceMapUpdate(camera: THREE.Camera): void {
+    if (!this.map) return;
+    const map = this.map as tt.TileMap & {
+      rootTile: { update: (p: Record<string, unknown>) => void };
+      loader: unknown;
+    };
+    map.rootTile.update({
+      camera,
+      loader: map.loader,
+      minLevel: map.minLevel,
+      maxLevel: map.maxLevel,
+      LODThreshold: map.LODThreshold,
+    });
+  }
+
+  /** Wait until the tile download queue has headroom so three-tile will run LOD again. */
+  private async waitForDownloadHeadroom(maxBusy?: number, timeoutMs = 4_000): Promise<void> {
+    if (!this.map) return;
+    const busy = maxBusy ?? Math.max(10, this.map.maxThreads - 6);
+    const deadline = performance.now() + timeoutMs;
+    while (this.map.downloading > busy && performance.now() < deadline) {
+      await new Promise((r) => setTimeout(r, 40));
+    }
+  }
+
   async loadAt(location: SpawnLocation, maxLevel: number, minLevel = 8): Promise<void> {
     if (this.map) {
       this.group.remove(this.map);
@@ -86,7 +136,7 @@ export class TerrainManager {
       lon0: nearestMeridian(location.lon),
       minLevel,
     });
-    this.map.maxThreads = currentSatelliteProviderName() === 'google' ? 16 : 14;
+    this.map.maxThreads = satelliteMaxThreads(false);
     this.map.LODThreshold = satelliteLodThreshold();
     this.map.updateInterval = 16;
     this.map.rotateX(-Math.PI / 2);
@@ -117,7 +167,7 @@ export class TerrainManager {
     this.spawnLocalGroundY = ground;
     this.spawnGroundElevM = ground;
 
-    await this.waitForTileDetail(spawnXZ, ground, 12, 30_000);
+    await this.waitForTileDetail(spawnXZ, ground, satelliteBestQualityMinZ(), 45_000);
   }
 
   /** Block until high-zoom tiles are textured and downloads have settled. */
@@ -126,16 +176,29 @@ export class TerrainManager {
     groundY: number,
     minZ: number,
     timeoutMs: number,
-  ): Promise<number> {
-    if (!this.map) return 0;
+    onProgress?: TileDetailProgress,
+  ): Promise<TileDetailResult> {
+    const empty: ImageryStats = {
+      maxZ: 0,
+      meshes: 0,
+      withMap: 0,
+      highZoomWithMap: 0,
+      brownNoMap: 0,
+      downloading: 0,
+    };
+    if (!this.map) return { maxZ: 0, ready: false, stats: empty };
+
     const savedInterval = this.map.updateInterval;
     const savedLod = this.map.LODThreshold;
+    const savedThreads = this.map.maxThreads;
     this.map.updateInterval = 0;
     this.map.LODThreshold = satellitePrimeLodThreshold();
+    this.map.maxThreads = satelliteMaxThreads(true);
 
-    const primeCam = new THREE.PerspectiveCamera(60, 1, 0.5, 500_000);
+    const primeCam = new THREE.PerspectiveCamera(50, 1, 0.2, 500_000);
     const y = Number.isFinite(groundY) ? groundY : 0;
-    primeCam.position.set(focus.x, y + 15, focus.z + 6);
+    // Stay very close to the surface so distRatio keeps refining toward maxLevel.
+    primeCam.position.set(focus.x, y + 4, focus.z + 2);
     primeCam.lookAt(focus.x, y, focus.z);
     primeCam.updateMatrixWorld(true);
 
@@ -143,32 +206,53 @@ export class TerrainManager {
     let maxZ = 0;
     let stablePasses = 0;
     let ready = false;
+    let stats = empty;
+    let camHop = 0;
     while (performance.now() < deadline) {
-      for (let i = 0; i < 3; i++) this.map.update(primeCam);
-      const stats = this.collectImageryStats(minZ);
+      await this.waitForDownloadHeadroom();
+
+      // Hold the nadir camera on the pad until we near target zoom, then micro-hop.
+      if (maxZ >= minZ - 2) {
+        camHop = (camHop + 1) % 4;
+      }
+      const ox = maxZ >= minZ - 2 ? (camHop % 2) * 2.5 - 1.25 : 0;
+      const oz = maxZ >= minZ - 2 ? Math.floor(camHop / 2) * 2.5 - 1.25 : 0;
+      primeCam.position.set(focus.x + ox, y + 3.2, focus.z + oz + 1.2);
+      primeCam.lookAt(focus.x, y, focus.z);
+      primeCam.updateMatrixWorld(true);
+
+      this.forceMapUpdate(primeCam);
+      await new Promise((r) => setTimeout(r, 100));
+
+      stats = this.collectImageryStats(minZ);
       maxZ = stats.maxZ;
-      if (this.imageryReady(minZ, stats)) {
+      ready = this.imageryReady(minZ, stats);
+      onProgress?.({ maxZ, targetZ: minZ, ready, stats });
+      if (ready) {
         stablePasses++;
-        if (stablePasses >= 5) {
-          ready = true;
-          break;
-        }
+        if (stablePasses >= 3) break;
       } else {
         stablePasses = 0;
       }
-      await new Promise((r) => setTimeout(r, 100));
     }
 
     this.map.updateInterval = savedInterval;
     this.map.LODThreshold = savedLod;
+    this.map.maxThreads = savedThreads;
+    ready = this.imageryReady(minZ, stats) && stablePasses >= 3;
     if (!ready) {
-      const stats = this.collectImageryStats(minZ);
       console.warn(
         '[terrain] satellite detail incomplete after wait',
         { provider: currentSatelliteProviderName(), minZ, ...stats },
       );
     }
-    return maxZ;
+    return { maxZ, ready, stats };
+  }
+
+  /** True when near-aircraft satellite tiles meet best-quality zoom for the active provider. */
+  isBestQuality(): boolean {
+    const minZ = satelliteBestQualityMinZ();
+    return this.imageryReady(minZ, this.collectImageryStats(minZ));
   }
 
   /** Keep satellite downloads moving while other assets load. */
@@ -220,7 +304,7 @@ export class TerrainManager {
   }
 
   private imageryReady(minZ: number, stats: ImageryStats): boolean {
-    const minHighZoom = minZ >= 12 ? 12 : 6;
+    const minHighZoom = minZ >= 18 ? 18 : minZ >= 16 ? 14 : minZ >= 12 ? 10 : 6;
     return (
       stats.maxZ >= minZ &&
       stats.highZoomWithMap >= minHighZoom &&
@@ -269,7 +353,7 @@ export class TerrainManager {
     primeCam.updateMatrixWorld(true);
 
     for (let i = 0; i < 40; i++) {
-      this.map.update(primeCam);
+      this.forceMapUpdate(primeCam);
       await new Promise((r) => setTimeout(r, 80));
     }
 
@@ -286,10 +370,12 @@ export class TerrainManager {
 
     const savedInterval = this.map.updateInterval;
     const savedLod = this.map.LODThreshold;
+    const savedThreads = this.map.maxThreads;
     this.map.updateInterval = 0;
     this.map.LODThreshold = satellitePrimeLodThreshold();
+    this.map.maxThreads = satelliteMaxThreads(true);
 
-    const primeCam = new THREE.PerspectiveCamera(60, 1, 0.5, 500_000);
+    const primeCam = new THREE.PerspectiveCamera(50, 1, 0.2, 500_000);
     const y = Number.isFinite(groundY) ? groundY : this.sampleHeightAt(focus);
 
     const prime = (px: number, py: number, pz: number, lx: number, ly: number, lz: number, n: number) => {
@@ -297,25 +383,25 @@ export class TerrainManager {
       primeCam.lookAt(lx, ly, lz);
       primeCam.updateMatrixWorld(true);
       for (let i = 0; i < n; i++) {
-        this.map!.update(primeCam);
+        this.forceMapUpdate(primeCam);
       }
     };
 
-    for (let i = 0; i < 32; i++) {
-      prime(focus.x, y + 12, focus.z + 4, focus.x, y, focus.z, 1);
-      await new Promise((r) => setTimeout(r, 70));
+    for (let i = 0; i < 40; i++) {
+      await this.waitForDownloadHeadroom();
+      const ox = ((i % 3) - 1) * 2.5;
+      const oz = (Math.floor(i / 3) % 3 - 1) * 2.5;
+      prime(focus.x + ox, y + 3.5, focus.z + oz + 1.5, focus.x, y, focus.z, 1);
+      await new Promise((r) => setTimeout(r, 80));
     }
 
-    const extra = currentSatelliteProviderName() === 'google' ? 20 : 0;
-    prime(focus.x + 20, y + 35, focus.z + 20, focus.x, y, focus.z, 14 + extra);
-    await new Promise((r) => setTimeout(r, 180));
-    prime(focus.x, y + 120, focus.z + 50, focus.x, y, focus.z, 10);
-    await new Promise((r) => setTimeout(r, 120));
-    prime(focus.x, y + 8, focus.z + 25, focus.x, y, focus.z, 12);
+    await this.waitForDownloadHeadroom();
+    prime(focus.x, y + 3, focus.z + 1.5, focus.x, y, focus.z, 2);
     await new Promise((r) => setTimeout(r, 150));
 
     this.map.updateInterval = savedInterval;
     this.map.LODThreshold = savedLod;
+    this.map.maxThreads = savedThreads;
     this._primePending = false;
   }
 
@@ -382,7 +468,7 @@ export class TerrainManager {
     const groundY = this.sampleHeightAt(focus);
     await this.refreshImageryLod(focus);
     await this.primeImageryAlongView(focus, groundY, camera);
-    await this.waitForTileDetail(focus, groundY, 12, 25_000);
+    await this.waitForTileDetail(focus, groundY, satelliteBestQualityMinZ(), 40_000);
   }
 
   /** Prime nadir tiles along the chase-camera ground path (horizon view stays coarse otherwise). */
@@ -394,10 +480,12 @@ export class TerrainManager {
     if (!this.map) return;
     const savedInterval = this.map.updateInterval;
     const savedLod = this.map.LODThreshold;
+    const savedThreads = this.map.maxThreads;
     this.map.updateInterval = 0;
     this.map.LODThreshold = satellitePrimeLodThreshold();
+    this.map.maxThreads = satelliteMaxThreads(true);
 
-    const primeCam = new THREE.PerspectiveCamera(60, 1, 0.5, 500_000);
+    const primeCam = new THREE.PerspectiveCamera(50, 1, 0.2, 500_000);
     const y = Number.isFinite(groundY) ? groundY : 0;
     const points: THREE.Vector3[] = [focus.clone()];
 
@@ -414,15 +502,16 @@ export class TerrainManager {
     }
 
     for (const pt of points) {
-      primeCam.position.set(pt.x, y + 18, pt.z);
+      primeCam.position.set(pt.x, y + 4, pt.z + 1.5);
       primeCam.lookAt(pt.x, y, pt.z);
       primeCam.updateMatrixWorld(true);
-      for (let i = 0; i < 24; i++) this.map.update(primeCam);
-      await new Promise((r) => setTimeout(r, 45));
+      for (let i = 0; i < 28; i++) this.forceMapUpdate(primeCam);
+      await new Promise((r) => setTimeout(r, 40));
     }
 
     this.map.updateInterval = savedInterval;
     this.map.LODThreshold = savedLod;
+    this.map.maxThreads = savedThreads;
   }
 
   /** Fast nadir LOD refresh after recenter (not full imagery re-download). */
@@ -430,22 +519,25 @@ export class TerrainManager {
     if (!this.map) return;
     const savedInterval = this.map.updateInterval;
     const savedLod = this.map.LODThreshold;
+    const savedThreads = this.map.maxThreads;
     this.map.updateInterval = 0;
     this.map.LODThreshold = satellitePrimeLodThreshold();
+    this.map.maxThreads = satelliteMaxThreads(true);
 
-    const primeCam = new THREE.PerspectiveCamera(60, 1, 0.5, 500_000);
+    const primeCam = new THREE.PerspectiveCamera(50, 1, 0.2, 500_000);
     const y = this.sampleHeightAt(focus);
-    primeCam.position.set(focus.x, y + 15, focus.z + 6);
+    primeCam.position.set(focus.x, y + 4, focus.z + 2);
     primeCam.lookAt(focus.x, y, focus.z);
     primeCam.updateMatrixWorld(true);
 
     for (let i = 0; i < 48; i++) {
-      this.map.update(primeCam);
-      await new Promise((r) => setTimeout(r, 40));
+      this.forceMapUpdate(primeCam);
+      await new Promise((r) => setTimeout(r, 35));
     }
 
     this.map.updateInterval = savedInterval;
     this.map.LODThreshold = savedLod;
+    this.map.maxThreads = savedThreads;
   }
 
   consumePrimePending(): boolean {

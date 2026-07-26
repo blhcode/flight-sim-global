@@ -35,6 +35,7 @@ export class InstrumentPanel {
     cameraMode: CameraMode,
     courseDeg: number | null = null,
     autopilotOn = false,
+    terrainHq = false,
   ): void {
     const ctx = this.ctx;
     const w = window.innerWidth;
@@ -84,12 +85,20 @@ export class InstrumentPanel {
     ctx.textAlign = 'right';
     ctx.fillText(`CAM ${cameraMode.toUpperCase()}`, w - 16, 48);
 
+    let badgeY = 58;
     if (autopilotOn) {
       ctx.fillStyle = 'rgba(0,0,0,0.35)';
-      ctx.fillRect(w - 140, 58, 128, 22);
+      ctx.fillRect(w - 140, badgeY, 128, 22);
       ctx.fillStyle = '#5dff9a';
       ctx.font = 'bold 11px system-ui';
-      ctx.fillText('AP HDG', w - 16, 74);
+      ctx.fillText('AP HDG', w - 16, badgeY + 16);
+      badgeY += 26;
     }
+
+    ctx.fillStyle = 'rgba(0,0,0,0.35)';
+    ctx.fillRect(w - 140, badgeY, 128, 22);
+    ctx.fillStyle = terrainHq ? '#5dff9a' : '#f0c85d';
+    ctx.font = 'bold 11px system-ui';
+    ctx.fillText(terrainHq ? 'TERRAIN HQ' : 'TERRAIN…', w - 16, badgeY + 16);
   }
 }

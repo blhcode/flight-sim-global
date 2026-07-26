@@ -30,10 +30,6 @@ type TileImageLoader = tt.TileImageLoader & {
   doLoad: (url: string, params: TileLoadParams) => Promise<THREE.Texture>;
 };
 
-function isGoogleSatelliteUrl(url: string): boolean {
-  return /googlecnapps\.club\/maps\/vt/i.test(url);
-}
-
 /** Satellite/road imagery must be unlit — MeshStandardMaterial looks flat green/grey on terrain. */
 export function configureTileRendering(): void {
   if (configured) return;
@@ -53,6 +49,9 @@ export function configureTileRendering(): void {
       if (!image || !('width' in image) || image.width < 4) throw new Error('empty');
     } catch {
       if (params.x == null || params.y == null) throw new Error('tile load failed');
+      // Esri only has sharp data to ~z13. Using it as a high-z fallback paints soft upscales
+      // that still count as "textured" and fool the HQ gate.
+      if (params.z > 13) throw new Error('tile load failed');
       texture = await originalLoad(esriImageryTileUrl(params.z, params.x, params.y), params);
     }
 
@@ -60,7 +59,8 @@ export function configureTileRendering(): void {
     if (!image || !('width' in image) || image.width < 4) return texture;
 
     try {
-      if (params.z >= 13 && !isGoogleSatelliteUrl(url)) {
+      // Sharpen high-zoom tiles for all providers (Google was previously skipped and looked soft).
+      if (params.z >= 14) {
         const enhanced = enhanceTileBitmap(image, image.width, image.height, params.z);
         texture.image = enhanced;
         texture.needsUpdate = true;
@@ -76,10 +76,10 @@ export function configureTileRendering(): void {
 export function setTileAnisotropy(renderer: THREE.WebGLRenderer): void {
   configureTileRendering();
   const max = renderer.capabilities.getMaxAnisotropy();
-  _anisotropy = Math.min(8, max);
+  _anisotropy = Math.min(16, max);
 }
 
-let _anisotropy = 4;
+let _anisotropy = 8;
 export function getTileAnisotropy(): number {
   return _anisotropy;
 }

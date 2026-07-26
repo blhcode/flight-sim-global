@@ -16,6 +16,7 @@ import { NavigationMap } from '../ui/NavigationMap.ts';
 import { Autopilot } from '../avionics/Autopilot.ts';
 import { getGearDebug } from '../rendering/landingGear.ts';
 import type { TileMap } from 'three-tile';
+import { satelliteBestQualityMinZ } from '../world/tileSources.ts';
 
 export type GamePhase = 'menu' | 'loading' | 'flying';
 
@@ -42,6 +43,8 @@ export class Game {
   private rafId = 0;
   private maxTileLevel = defaultConfig.maxTileLevel;
   private terrainWarmupFrames = 0;
+  private terrainHq = false;
+  private hqCheckCooldown = 0;
 
   constructor(container: HTMLElement) {
     container.innerHTML = '';
@@ -177,20 +180,16 @@ export class Game {
         const mode = this.cameraRig?.mode;
         if (this.aircraft && mode === 'outside') {
           this.loadingScreen.setMessage('Loading satellite detail…');
+          this.loadingScreen.setProgress(0.6);
           this.loadingScreen.show();
           void this.terrain
             .onViewChanged(this.aircraft.root.position, this.sceneManager.camera)
-            .then(() => {
-              const spawn = this.terrain.currentSpawn;
-              if (spawn && this.aircraft) {
-                const seated = this.terrain.spawnPosition(
-                  spawn.lat,
-                  spawn.lon,
-                  this.aircraft.definition.gearOffsetM,
-                  spawn.altM,
-                );
-                this.aircraft.respawnAt(seated, spawn.headingDeg);
-                this.cameraRig?.snapCamera();
+            .then(async () => {
+              this.terrainHq = this.terrain.isBestQuality();
+              if (this.terrainHq) {
+                this.loadingScreen.setMessage('Best quality terrain ready');
+                this.loadingScreen.setProgress(1);
+                await new Promise((r) => setTimeout(r, 700));
               }
               this.loadingScreen.hide();
             });
@@ -206,10 +205,46 @@ export class Game {
 
     await this.audio.init();
     this.audio.setEngineType(def.engineType);
-    this.loadingScreen.setMessage('Loading satellite detail…');
+    const targetZ = satelliteBestQualityMinZ();
+    this.loadingScreen.setMessage(`Loading best quality terrain… z0/${targetZ}`);
     this.loadingScreen.setProgress(0.85);
-    await this.terrain.waitForTileDetail(spawnXZ, groundY, 12, 60_000);
-    this.loadingScreen.setProgress(1);
+    const onDetailProgress = ({ maxZ, targetZ: tz }: { maxZ: number; targetZ: number }) => {
+      this.loadingScreen.setMessage(`Loading best quality terrain… z${maxZ}/${tz}`);
+      this.loadingScreen.setProgress(
+        Math.min(0.98, 0.55 + (maxZ / Math.max(tz, 1)) * 0.43),
+      );
+    };
+    let detail = await this.terrain.waitForTileDetail(
+      spawnXZ,
+      groundY,
+      targetZ,
+      120_000,
+      onDetailProgress,
+    );
+    // Keep refining until HQ — soft tiles must not pass as "ready".
+    for (let attempt = 0; !detail.ready && attempt < 3; attempt++) {
+      this.loadingScreen.setMessage(`Refining to best quality… z${detail.maxZ}/${targetZ}`);
+      this.terrain.primeTilesAt(spawnXZ, groundY);
+      detail = await this.terrain.waitForTileDetail(
+        spawnXZ,
+        groundY,
+        targetZ,
+        60_000,
+        onDetailProgress,
+      );
+    }
+    this.terrainHq = detail.ready;
+    if (detail.ready) {
+      this.loadingScreen.setMessage('Best quality terrain ready');
+      this.loadingScreen.setProgress(1);
+      await new Promise((r) => setTimeout(r, 800));
+    } else {
+      this.loadingScreen.setMessage(
+        `Terrain ready at z${detail.maxZ} — HQ needs z${targetZ} (still refining in flight)`,
+      );
+      this.loadingScreen.setProgress(1);
+      await new Promise((r) => setTimeout(r, 900));
+    }
     this.loadingScreen.hide();
     this.phase = 'flying';
     this.input.setFlying(true);
@@ -296,11 +331,10 @@ export class Game {
         this.terrainWarmupFrames--;
         if (this.terrainWarmupFrames === 0) {
           const focus = this.aircraft.root.position;
-          const gy = this.terrain.sampleHeightAtGeo(
-            this.terrain.currentSpawn?.lat ?? 0,
-            this.terrain.currentSpawn?.lon ?? 0,
-          );
-          void this.terrain.waitForTileDetail(focus, gy, 11, 15_000).then(() => {
+          const gy = this.terrain.sampleHeightAt(focus);
+          const targetZ = satelliteBestQualityMinZ();
+          void this.terrain.waitForTileDetail(focus, gy, targetZ, 30_000).then((r) => {
+            this.terrainHq = r.ready || this.terrain.isBestQuality();
             this.terrain.setUpdateInterval(16);
           });
         }
@@ -317,8 +351,22 @@ export class Game {
       this.navMap.updatePlayer(geo.lat, geo.lon, telem.headingDeg);
       const courseDeg = this.navMap.getDesiredHeading();
 
+      if (!this.terrainHq) {
+        this.hqCheckCooldown--;
+        if (this.hqCheckCooldown <= 0) {
+          this.hqCheckCooldown = 45;
+          this.terrainHq = this.terrain.isBestQuality();
+        }
+      }
+
       this.hud.canvas.style.opacity = '1';
-      this.hud.render(telem, this.cameraRig.mode, courseDeg, this.autopilot.isEnabled());
+      this.hud.render(
+        telem,
+        this.cameraRig.mode,
+        courseDeg,
+        this.autopilot.isEnabled(),
+        this.terrainHq,
+      );
       this.audio.update(telem.throttle, telem.airspeedKts);
 
       this.input.endFrame();
@@ -370,12 +418,7 @@ export class Game {
   /** Test / automation — loading finished, sim running, and satellite detail is present. */
   isFlightReady(): boolean {
     if (this.phase !== 'flying' || !this.aircraft?.body) return false;
-    const stats = this.terrain.imageryStats(10);
-    return (
-      stats.maxZ >= 10 &&
-      stats.highZoomWithMap >= 8 &&
-      stats.brownNoMap === 0
-    );
+    return this.terrainHq || this.terrain.isBestQuality();
   }
 
   /** Test / automation — nose pitch & bank from body quaternion (gimbal-safe). */
@@ -432,17 +475,7 @@ export class Game {
         this.aircraft.root.position,
         this.sceneManager.camera,
       );
-      const spawn = this.terrain.currentSpawn;
-      if (spawn) {
-        const seated = this.terrain.spawnPosition(
-          spawn.lat,
-          spawn.lon,
-          this.aircraft.definition.gearOffsetM,
-          spawn.altM,
-        );
-        this.aircraft.respawnAt(seated, spawn.headingDeg);
-        this.cameraRig?.snapCamera();
-      }
+      this.terrainHq = this.terrain.isBestQuality();
     }
   }
 

@@ -40,8 +40,9 @@ export function enhanceTileBitmap(
 
   ctx.drawImage(source, 0, 0, width, height);
   if (tileZoom >= 14) {
+    const amount = tileZoom >= 18 ? 0.42 : tileZoom >= 16 ? 0.35 : 0.28;
     const imageData = ctx.getImageData(0, 0, width, height);
-    sharpenImageData(imageData, 0.28);
+    sharpenImageData(imageData, amount);
     ctx.putImageData(imageData, 0, 0);
   }
   return canvas;
