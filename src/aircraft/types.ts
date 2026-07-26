@@ -67,6 +67,9 @@ export interface FlightTelemetry {
   throttle: number;
   flaps: number;
   gearDown: boolean;
+  engineOn: boolean;
+  /** 0–1 spool (thrust / sound follow this). */
+  enginePower: number;
   alphaDeg: number;
   onGround: boolean;
   stallWarning: boolean;

@@ -79,7 +79,7 @@ export class SpawnPanel {
         <label>Heading ° <input type="number" id="spawn-hdg" value="160" min="0" max="359" /></label>
         <p id="spawn-error" class="spawn-error hidden" role="alert"></p>
         <button type="button" id="spawn-go" class="primary">Load terrain & fly</button>
-        <p class="spawn-hint">ICAO/IATA or lat/lon — clear the airport code to spawn by coordinates. W/S pitch · A/D roll · Q/E yaw · ↑/↓ throttle · M map</p>
+        <p class="spawn-hint">ICAO/IATA or lat/lon — clear the airport code to spawn by coordinates. W/S pitch · A/D roll · Q/E yaw · T engine · ↑/↓ throttle · M map</p>
       </div>
     `;
     container.appendChild(this.element);

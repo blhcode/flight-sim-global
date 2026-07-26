@@ -40,12 +40,13 @@ Open **http://localhost:5173**, pick an aircraft and airport, then click **Load 
 | W / S | Pitch up / down |
 | A / D | Roll left / right |
 | Q / E | Yaw left / right |
+| T | Engine on / off |
 | ↑ / ↓ | Throttle up / down |
 | F | Toggle flaps |
 | G | Toggle gear |
 | B | Wheel brakes (hold) |
 | C | Cycle camera (cockpit → gear → outside → chase) |
-| T | Cycle terrain texture (satellite / roadmap) |
+| Y | Cycle terrain texture (satellite / roadmap) |
 | M | Toggle navigation map |
 | P | Toggle autopilot (follows selected route heading) |
 

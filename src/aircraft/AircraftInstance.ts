@@ -24,8 +24,15 @@ export class AircraftInstance {
 
   flapsDeployed = false;
   gearDown = true;
+  /** Master ignition switch — spool follows over ~1–2s. */
+  engineOn = true;
+  /** 0–1 delivered engine power (spools toward on/off). */
+  enginePower = 1;
   onGround = true;
   private activeWeight: WeightProfile | null = null;
+
+  private static readonly ENGINE_START_SEC = 1.8;
+  private static readonly ENGINE_STOP_SEC = 1.6;
 
   constructor(definition: AircraftDefinition, weightProfileId?: string) {
     this.definition = definition;
@@ -101,6 +108,8 @@ export class AircraftInstance {
     this.controls.elevator = 0;
     this.controls.aileron = 0;
     this.controls.rudder = 0;
+    this.engineOn = true;
+    this.enginePower = 1;
   }
 
   update(
@@ -109,11 +118,23 @@ export class AircraftInstance {
   ): void {
     if (!this.body || !this.model) return;
 
+    const target = this.engineOn ? 1 : 0;
+    const spoolSec = this.engineOn
+      ? AircraftInstance.ENGINE_START_SEC
+      : AircraftInstance.ENGINE_STOP_SEC;
+    const step = dt / Math.max(0.05, spoolSec);
+    if (this.enginePower < target) {
+      this.enginePower = Math.min(target, this.enginePower + step);
+    } else if (this.enginePower > target) {
+      this.enginePower = Math.max(target, this.enginePower - step);
+    }
+
     const d = this.definition;
+    const thrustThrottle = this.controls.throttle * this.enginePower;
     this.onGround = this.body.step(
       dt,
       {
-        throttle: this.controls.throttle,
+        throttle: thrustThrottle,
         elevator: this.controls.elevator,
         aileron: this.controls.aileron,
         rudder: this.controls.rudder,
@@ -147,7 +168,7 @@ export class AircraftInstance {
       aileron: this.controls.aileron,
       rudder: this.controls.rudder,
       flaps: this.flapsDeployed ? 1 : 0,
-      throttle: this.controls.throttle,
+      throttle: thrustThrottle,
       gearDown: this.gearDown,
     }, dt);
 
@@ -167,6 +188,8 @@ export class AircraftInstance {
         throttle: this.controls.throttle,
         flaps: this.flapsDeployed ? 1 : 0,
         gearDown: this.gearDown,
+        engineOn: this.engineOn,
+        enginePower: this.enginePower,
         alphaDeg: 0,
         onGround: true,
         stallWarning: false,
@@ -184,6 +207,8 @@ export class AircraftInstance {
       throttle: this.controls.throttle,
       flaps: this.flapsDeployed ? 1 : 0,
       gearDown: this.gearDown,
+      engineOn: this.engineOn,
+      enginePower: this.enginePower,
       alphaDeg: b.alphaDeg,
       onGround: this.onGround,
       stallWarning: b.stallWarning,

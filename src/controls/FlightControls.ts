@@ -82,6 +82,9 @@ export class FlightControls {
 
     c.brakes = this.input.isDown('KeyB') ? 1 : 0;
 
+    if (this.input.wasPressed('KeyT')) {
+      this.aircraft.engineOn = !this.aircraft.engineOn;
+    }
     if (this.input.wasPressed('KeyF')) {
       this.aircraft.flapsDeployed = !this.aircraft.flapsDeployed;
     }
@@ -92,7 +95,7 @@ export class FlightControls {
     if (this.input.wasPressed('KeyC')) {
       this.onCameraCycle();
     }
-    if (this.input.wasPressed('KeyT')) {
+    if (this.input.wasPressed('KeyY')) {
       this.onTextureCycle();
     }
   }

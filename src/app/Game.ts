@@ -76,6 +76,8 @@ export class Game {
         throttle: 0,
         flaps: 0,
         gearDown: true,
+        engineOn: true,
+        enginePower: 1,
         alphaDeg: 0,
         onGround: true,
         stallWarning: false,
@@ -367,7 +369,7 @@ export class Game {
         this.autopilot.isEnabled(),
         this.terrainHq,
       );
-      this.audio.update(telem.throttle, telem.airspeedKts);
+      this.audio.update(telem.throttle, telem.airspeedKts, telem.enginePower);
 
       this.input.endFrame();
     } else if (this.phase === 'menu') {

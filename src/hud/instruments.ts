@@ -137,13 +137,23 @@ export function drawStatusBar(
   ctx.textAlign = 'left';
   const gear = t.gearDown ? 'DN' : 'UP';
   const flaps = t.flaps > 0 ? 'FULL' : 'UP';
-  const prefix = `THR ${(t.throttle * 100).toFixed(0)}%  IAS ${t.airspeedKts.toFixed(0)}kt  FLAPS ${flaps}  GEAR ${gear}  ${t.onGround ? 'GND' : 'AIR'}  α ${t.alphaDeg.toFixed(0)}°`;
+  let eng = 'OFF';
+  if (t.engineOn && t.enginePower >= 0.97) eng = 'ON';
+  else if (t.engineOn) eng = 'START';
+  else if (t.enginePower > 0.03) eng = 'STOP';
+  const prefix = `THR ${(t.throttle * 100).toFixed(0)}%  IAS ${t.airspeedKts.toFixed(0)}kt  FLAPS ${flaps}  GEAR ${gear}  ENG ${eng}  ${t.onGround ? 'GND' : 'AIR'}  α ${t.alphaDeg.toFixed(0)}°`;
   ctx.fillText(prefix, 12, 18);
+  let cursorX = 12 + ctx.measureText(prefix).width;
+  if (!t.engineOn && t.enginePower < 0.03) {
+    ctx.fillStyle = '#ff6b4a';
+    ctx.font = 'bold 12px system-ui';
+    ctx.fillText('  CUT', cursorX, 18);
+    cursorX += ctx.measureText('  CUT').width;
+  }
   if (autopilotOn) {
-    const prefixW = ctx.measureText(prefix).width;
     ctx.fillStyle = '#5dff9a';
     ctx.font = 'bold 12px system-ui';
-    ctx.fillText('  AP ON', 12 + prefixW, 18);
+    ctx.fillText('  AP ON', cursorX, 18);
   }
 }
 
@@ -162,7 +172,22 @@ export function drawFlightWarnings(
     ctx.fillText('STALL', w / 2, h / 2 + 8);
     return;
   }
-  if (t.stallWarning) {
+  if (!t.engineOn && t.enginePower < 0.05) {
+    ctx.fillStyle = 'rgba(40, 40, 50, 0.85)';
+    ctx.font = 'bold 14px system-ui';
+    ctx.textAlign = 'center';
+    ctx.fillText('ENGINE OFF', w / 2, 52);
+  } else if (t.engineOn && t.enginePower < 0.97) {
+    ctx.fillStyle = 'rgba(60, 90, 70, 0.9)';
+    ctx.font = 'bold 14px system-ui';
+    ctx.textAlign = 'center';
+    ctx.fillText('ENGINE START', w / 2, 52);
+  } else if (!t.engineOn && t.enginePower >= 0.05) {
+    ctx.fillStyle = 'rgba(90, 70, 40, 0.9)';
+    ctx.font = 'bold 14px system-ui';
+    ctx.textAlign = 'center';
+    ctx.fillText('ENGINE STOPPING', w / 2, 52);
+  } else if (t.stallWarning) {
     ctx.fillStyle = 'rgba(220, 120, 20, 0.9)';
     ctx.font = 'bold 16px system-ui';
     ctx.textAlign = 'center';

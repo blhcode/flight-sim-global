@@ -1,6 +1,6 @@
 const GAME_KEYS = new Set([
   'KeyW', 'KeyA', 'KeyS', 'KeyD', 'KeyQ', 'KeyE',
-  'KeyF', 'KeyG', 'KeyB', 'KeyC', 'KeyT', 'KeyM', 'KeyP',
+  'KeyF', 'KeyG', 'KeyB', 'KeyC', 'KeyT', 'KeyY', 'KeyM', 'KeyP',
   'ArrowUp', 'ArrowDown', 'ArrowLeft', 'ArrowRight',
   'ShiftLeft', 'ShiftRight', 'ControlLeft', 'ControlRight',
   'Equal', 'Minus', 'NumpadAdd', 'NumpadSubtract',

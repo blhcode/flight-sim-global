@@ -117,34 +117,43 @@ export class EngineAudio {
     }
   }
 
-  update(throttle: number, airspeedKts: number): void {
+  update(throttle: number, airspeedKts: number, enginePower = 1): void {
     if (!this.ctx || !this.engineOsc || !this.propOsc || !this.jetNoise || !this.jetFilter) return;
+    const p = Math.min(1, Math.max(0, enginePower));
     const t = throttle;
     const spd = Math.min(airspeedKts / 120, 1);
     const now = this.ctx.currentTime;
 
+    if (p < 0.001) {
+      this.engineGain!.gain.setTargetAtTime(0, now, 0.06);
+      this.propGain!.gain.setTargetAtTime(0, now, 0.06);
+      this.jetGain!.gain.setTargetAtTime(0, now, 0.06);
+      this.windGain!.gain.setTargetAtTime(spd * 0.12, now, 0.08);
+      return;
+    }
+
     if (this.engineType === 'jet') {
-      const core = 0.02 + t * 0.04;
-      const roar = 0.18 + t * 0.42 + spd * 0.12;
-      this.engineOsc.frequency.setTargetAtTime(38 + t * 55 + spd * 25, now, 0.06);
-      this.jetNoise.playbackRate.setTargetAtTime(0.85 + t * 1.8 + spd * 0.5, now, 0.06);
-      this.jetFilter.frequency.setTargetAtTime(380 + t * 900 + spd * 500, now, 0.08);
-      this.jetFilter.Q.setTargetAtTime(0.45 + t * 0.35, now, 0.08);
-      this.engineGain!.gain.setTargetAtTime(core, now, 0.05);
-      this.jetGain!.gain.setTargetAtTime(roar, now, 0.05);
+      const core = (0.02 + t * 0.04) * p;
+      const roar = (0.18 + t * 0.42 + spd * 0.12) * p;
+      this.engineOsc.frequency.setTargetAtTime(28 + (38 + t * 55 + spd * 25 - 28) * p, now, 0.08);
+      this.jetNoise.playbackRate.setTargetAtTime(0.55 + (0.85 + t * 1.8 + spd * 0.5 - 0.55) * p, now, 0.08);
+      this.jetFilter.frequency.setTargetAtTime(220 + (380 + t * 900 + spd * 500 - 220) * p, now, 0.1);
+      this.jetFilter.Q.setTargetAtTime(0.35 + (0.45 + t * 0.35 - 0.35) * p, now, 0.1);
+      this.engineGain!.gain.setTargetAtTime(core, now, 0.08);
+      this.jetGain!.gain.setTargetAtTime(roar, now, 0.08);
       this.propGain!.gain.setTargetAtTime(0, now, 0.01);
     } else if (this.engineType === 'turboprop') {
-      this.engineOsc.frequency.setTargetAtTime(60 + t * 100, now, 0.05);
-      this.propOsc.frequency.setTargetAtTime(90 + t * 320, now, 0.05);
-      this.jetNoise.playbackRate.setTargetAtTime(0.5 + t * 0.8, now, 0.05);
-      this.engineGain!.gain.setTargetAtTime(0.06 + t * 0.12, now, 0.05);
-      this.propGain!.gain.setTargetAtTime(0.02 + t * 0.07, now, 0.05);
-      this.jetGain!.gain.setTargetAtTime(0.02 + t * 0.05, now, 0.05);
+      this.engineOsc.frequency.setTargetAtTime(35 + (60 + t * 100 - 35) * p, now, 0.08);
+      this.propOsc.frequency.setTargetAtTime(40 + (90 + t * 320 - 40) * p, now, 0.08);
+      this.jetNoise.playbackRate.setTargetAtTime(0.35 + (0.5 + t * 0.8 - 0.35) * p, now, 0.08);
+      this.engineGain!.gain.setTargetAtTime((0.06 + t * 0.12) * p, now, 0.08);
+      this.propGain!.gain.setTargetAtTime((0.02 + t * 0.07) * p, now, 0.08);
+      this.jetGain!.gain.setTargetAtTime((0.02 + t * 0.05) * p, now, 0.08);
     } else {
-      this.engineOsc.frequency.setTargetAtTime(70 + t * 120, now, 0.05);
-      this.propOsc.frequency.setTargetAtTime(120 + t * 400, now, 0.05);
-      this.engineGain!.gain.setTargetAtTime(0.08 + t * 0.12, now, 0.05);
-      this.propGain!.gain.setTargetAtTime(0.03 + t * 0.08, now, 0.05);
+      this.engineOsc.frequency.setTargetAtTime(40 + (70 + t * 120 - 40) * p, now, 0.08);
+      this.propOsc.frequency.setTargetAtTime(50 + (120 + t * 400 - 50) * p, now, 0.08);
+      this.engineGain!.gain.setTargetAtTime((0.08 + t * 0.12) * p, now, 0.08);
+      this.propGain!.gain.setTargetAtTime((0.03 + t * 0.08) * p, now, 0.08);
       this.jetGain!.gain.setTargetAtTime(0, now, 0.05);
     }
 
