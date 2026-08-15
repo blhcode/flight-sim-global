@@ -4,6 +4,7 @@ import { twinOtterDefinition } from './definitions/twinOtter.ts';
 import { dash8400Definition } from './definitions/dash8400.ts';
 import { b737Definition } from './definitions/b737.ts';
 import { b747Definition } from './definitions/b747.ts';
+import { r22Definition } from './definitions/r22.ts';
 
 const registry = new Map<string, AircraftDefinition>([
   [cessna172Definition.id, cessna172Definition],
@@ -11,6 +12,7 @@ const registry = new Map<string, AircraftDefinition>([
   [dash8400Definition.id, dash8400Definition],
   [b737Definition.id, b737Definition],
   [b747Definition.id, b747Definition],
+  [r22Definition.id, r22Definition],
 ]);
 
 export function getAircraftDefinition(id: string): AircraftDefinition {

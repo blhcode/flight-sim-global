@@ -13,7 +13,7 @@ globalThis.ProgressEvent = class ProgressEvent extends Event {
 };
 
 const loader = new GLTFLoader();
-for (const m of ['b737-800', 'b747-400', 'dash8-q400', 'twin-otter']) {
+for (const m of ['b737-800', 'b747-400', 'dash8-q400', 'twin-otter', 'r22']) {
   const buf = fs.readFileSync(`public/models/${m}/scene.glb`);
   const gltf = await loader.parseAsync(buf.buffer.slice(buf.byteOffset, buf.byteOffset + buf.byteLength), '');
   const box = new THREE.Box3().setFromObject(gltf.scene);

@@ -96,6 +96,15 @@ export class EngineAudio {
         this.engineGain.gain.setTargetAtTime(0.025, now, 0.02);
         this.jetGain.gain.setTargetAtTime(0.28, now, 0.02);
         break;
+      case 'heli':
+        this.engineOsc.type = 'sawtooth';
+        this.jetFilter.type = 'bandpass';
+        this.jetFilter.frequency.setValueAtTime(280, now);
+        this.jetFilter.Q.setValueAtTime(0.8, now);
+        this.propGain.gain.setTargetAtTime(0.07, now, 0.02);
+        this.jetGain.gain.setTargetAtTime(0.04, now, 0.02);
+        this.engineGain.gain.setTargetAtTime(0.06, now, 0.02);
+        break;
       case 'turboprop':
         this.engineOsc.type = 'sawtooth';
         this.jetFilter.type = 'lowpass';
@@ -142,6 +151,13 @@ export class EngineAudio {
       this.engineGain!.gain.setTargetAtTime(core, now, 0.08);
       this.jetGain!.gain.setTargetAtTime(roar, now, 0.08);
       this.propGain!.gain.setTargetAtTime(0, now, 0.01);
+    } else if (this.engineType === 'heli') {
+      this.engineOsc.frequency.setTargetAtTime(45 + (70 + t * 40 - 45) * p, now, 0.08);
+      this.propOsc.frequency.setTargetAtTime(55 + (90 + t * 80 - 55) * p, now, 0.08);
+      this.jetNoise.playbackRate.setTargetAtTime(0.4 + 0.5 * t * p, now, 0.08);
+      this.engineGain!.gain.setTargetAtTime((0.05 + t * 0.05) * p, now, 0.08);
+      this.propGain!.gain.setTargetAtTime((0.04 + t * 0.05) * p, now, 0.08);
+      this.jetGain!.gain.setTargetAtTime((0.02 + t * 0.03) * p, now, 0.08);
     } else if (this.engineType === 'turboprop') {
       this.engineOsc.frequency.setTargetAtTime(35 + (60 + t * 100 - 35) * p, now, 0.08);
       this.propOsc.frequency.setTargetAtTime(40 + (90 + t * 320 - 40) * p, now, 0.08);

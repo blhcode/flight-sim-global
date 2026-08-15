@@ -1,5 +1,6 @@
 import * as THREE from 'three';
 import type { AeroPoint } from './AtmosphereISA.ts';
+import type { EngineType } from '../aircraft/types.ts';
 import {
   TAXI_PITCH_LOCK_MS,
   weightOnWheels,
@@ -31,7 +32,7 @@ export interface FlightParams {
   stallAlphaDeg: number;
   flapsCL: number;
   aeroTables: AeroPoint[];
-  engineType?: 'prop' | 'turboprop' | 'jet';
+  engineType?: EngineType;
   rotateSpeedMs?: number;
   stallSpeedMs?: number;
   groundRollLiftScale?: number;

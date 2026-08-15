@@ -1,0 +1,5 @@
+Robinson R22 Beta II 3D model
+Source: FlightGear FGAddon (https://wiki.flightgear.org/Robinson_R22)
+Authors: Syd Adams, Maik Justus, Heiko Schulz
+License: GNU General Public License v2 or later
+Converted from AC3D (r22.ac + interior.ac) to GLB for this project.

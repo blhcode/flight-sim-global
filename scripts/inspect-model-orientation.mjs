@@ -11,6 +11,7 @@ const AIRCRAFT = [
   { id: 'b747', file: 'b747-400/scene.glb', wing: 64.4, preX: 0, yaw: 0 },
   { id: 'dash8400', file: 'dash8-q400/scene.glb', wing: 28.4, preX: 0, yaw: 0 },
   { id: 'twinOtter', file: 'twin-otter/scene.glb', wing: 19.8, preX: -Math.PI / 2, yaw: Math.PI, spanAxis: 'x' },
+  { id: 'r22', file: 'r22/scene.glb', wing: 7.67, preX: 0, yaw: -Math.PI / 2, spanAxis: 'auto' },
 ];
 
 const loader = new GLTFLoader();

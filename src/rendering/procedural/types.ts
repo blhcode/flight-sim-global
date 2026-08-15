@@ -3,4 +3,5 @@ export type ProceduralModelId =
   | 'b737'
   | 'twinOtter'
   | 'dash8400'
-  | 'b747';
+  | 'b747'
+  | 'r22';

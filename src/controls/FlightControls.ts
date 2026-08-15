@@ -30,14 +30,15 @@ export class FlightControls {
 
   update(dt: number): void {
     const c = this.aircraft.controls;
+    const heli = this.aircraft.definition.category === 'helicopter';
     const apAxes = this.autopilotAxes;
     const agl = this.aircraft.body?.aglM ?? 0;
     const vs = this.aircraft.body?.verticalSpeed ?? 0;
     const kts = (this.aircraft.body?.indicatedAirspeed ?? 0) * MS_TO_KTS;
-    const pitchLocked = pitchLockedOnGround(agl, vs, kts);
-    const onTakeoffRoll = weightOnWheels(agl, vs) && kts >= TAXI_PITCH_LOCK_KTS;
-    const onFinal = !pitchLocked && agl < 20 && kts > 38 && kts < 85;
-    const onLowAlt = !weightOnWheels(agl, vs) && agl < 50;
+    const pitchLocked = !heli && pitchLockedOnGround(agl, vs, kts);
+    const onTakeoffRoll = !heli && weightOnWheels(agl, vs) && kts >= TAXI_PITCH_LOCK_KTS;
+    const onFinal = !heli && !pitchLocked && agl < 20 && kts > 38 && kts < 85;
+    const onLowAlt = !heli && !weightOnWheels(agl, vs) && agl < 50;
 
     const pitchUp = !apAxes && this.input.isDown('KeyW');
     const pitchDown = !apAxes && this.input.isDown('KeyS');
@@ -77,18 +78,18 @@ export class FlightControls {
     const throttleUp = this.input.isDown('ArrowUp');
     const throttleDown = this.input.isDown('ArrowDown');
 
-    if (throttleUp) c.throttle = Math.min(1, c.throttle + 0.14 * dt);
-    if (throttleDown) c.throttle = Math.max(0, c.throttle - 0.14 * dt);
+    if (throttleUp) c.throttle = Math.min(1, c.throttle + (heli ? 0.1 : 0.14) * dt);
+    if (throttleDown) c.throttle = Math.max(0, c.throttle - (heli ? 0.1 : 0.14) * dt);
 
     c.brakes = this.input.isDown('KeyB') ? 1 : 0;
 
     if (this.input.wasPressed('KeyT')) {
       this.aircraft.engineOn = !this.aircraft.engineOn;
     }
-    if (this.input.wasPressed('KeyF')) {
+    if (!heli && this.input.wasPressed('KeyF')) {
       this.aircraft.flapsDeployed = !this.aircraft.flapsDeployed;
     }
-    if (this.input.wasPressed('KeyG')) {
+    if (!heli && this.input.wasPressed('KeyG')) {
       this.aircraft.gearDown = !this.aircraft.gearDown;
       this.aircraft.controls.gearDown = this.aircraft.gearDown;
     }

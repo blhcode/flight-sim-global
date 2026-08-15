@@ -37,11 +37,11 @@ Open **http://localhost:5173**, pick an aircraft and airport, then click **Load 
 
 | Key | Action |
 |-----|--------|
-| W / S | Pitch up / down |
-| A / D | Roll left / right |
+| W / S | Pitch up / down (helicopter: cyclic forward / back) |
+| A / D | Roll left / right (helicopter: cyclic right / left) |
 | Q / E | Yaw left / right |
 | T | Engine on / off |
-| ↑ / ↓ | Throttle up / down |
+| ↑ / ↓ | Throttle up / down (helicopter: collective) |
 | F | Toggle flaps |
 | G | Toggle gear |
 | B | Wheel brakes (hold) |
@@ -69,7 +69,17 @@ When the **DHC-6 Twin Otter** is selected, a **Weight** option appears on the sp
 6. Drag to pan, scroll or **+/−** to zoom, **Clear route** to reset
 7. After takeoff, press **P** to engage autopilot — it banks toward the pink course bug and holds the pitch you had when you engaged. Press **P** again or roll with **A/D** to disconnect.
 
-The spawn screen also shows each aircraft’s approximate **rotate / liftoff** speed.
+The spawn screen also shows each aircraft’s approximate **rotate / liftoff** speed (helicopters show a hover collective hint instead).
+
+### Helicopter (R22)
+
+- **↑ / ↓** collective — raise through ~60% to hover, more to climb
+- **W / S** cyclic forward / back (W lowers the nose)
+- **A / D** cyclic right / left
+- **Q / E** anti-torque pedals
+- **T** engine cut / start (rotor winds down)
+
+Autopilot is disabled on helicopters.
 
 ## Aircraft
 
@@ -80,6 +90,7 @@ The spawn screen also shows each aircraft’s approximate **rotate / liftoff** s
 | Dash 8 Q400 | Turboprop | Regional turboprop |
 | Boeing 737-800 | Jet | Narrow-body airliner |
 | Boeing 747-400 | Jet | Heavy wide-body; realistic long takeoff roll |
+| Robinson R22 | Helicopter | Collective (↑/↓), cyclic (WASD), pedals (Q/E) |
 
 Model sources and licenses are listed in [CREDITS.md](CREDITS.md).
 

@@ -82,14 +82,13 @@ function parsePolyObject(lines, i, materials) {
       refs.push(lines[i++].trim().split(/\s+/).map(Number));
     }
 
+    if (refsCount < 3) continue;
+
     const textured = (surfFlags & 0x20) !== 0 || refs[0].length >= 3;
-    const tris =
-      refsCount === 3
-        ? [[0, 1, 2]]
-        : [
-            [0, 1, 2],
-            [0, 2, 3],
-          ];
+    const tris = [];
+    for (let t = 1; t < refsCount - 1; t++) {
+      tris.push([0, t, t + 1]);
+    }
 
     let group = groups.get(matIdx);
     if (!group) {

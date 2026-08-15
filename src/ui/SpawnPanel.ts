@@ -79,7 +79,7 @@ export class SpawnPanel {
         <label>Heading ° <input type="number" id="spawn-hdg" value="160" min="0" max="359" /></label>
         <p id="spawn-error" class="spawn-error hidden" role="alert"></p>
         <button type="button" id="spawn-go" class="primary">Load terrain & fly</button>
-        <p class="spawn-hint">ICAO/IATA or lat/lon — clear the airport code to spawn by coordinates. W/S pitch · A/D roll · Q/E yaw · T engine · ↑/↓ throttle · M map</p>
+        <p class="spawn-hint" id="spawn-hint">ICAO/IATA or lat/lon — clear the airport code to spawn by coordinates. W/S pitch · A/D roll · Q/E yaw · T engine · ↑/↓ throttle · M map</p>
       </div>
     `;
     container.appendChild(this.element);
@@ -113,11 +113,24 @@ export class SpawnPanel {
     aircraftSelect.addEventListener('change', () => {
       this.syncWeightOptions();
       this.syncRotateSpeed();
+      this.syncHint();
     });
     const weightSelect = this.element.querySelector('#spawn-weight') as HTMLSelectElement;
     weightSelect.addEventListener('change', () => this.syncRotateSpeed());
     this.syncWeightOptions();
     this.syncRotateSpeed();
+    this.syncHint();
+  }
+
+  private syncHint(): void {
+    const el = this.element.querySelector('#spawn-hint') as HTMLElement | null;
+    if (!el) return;
+    const aircraftId =
+      (this.element.querySelector('#spawn-aircraft') as HTMLSelectElement).value || 'cessna172';
+    const heli = getAircraftDefinition(aircraftId).category === 'helicopter';
+    el.textContent = heli
+      ? 'ICAO/IATA or lat/lon. W/S cyclic pitch · A/D cyclic roll · Q/E pedals · ↑/↓ collective · T engine · M map. Hover around 60% collective.'
+      : 'ICAO/IATA or lat/lon — clear the airport code to spawn by coordinates. W/S pitch · A/D roll · Q/E yaw · T engine · ↑/↓ throttle · M map';
   }
 
   private syncRotateSpeed(): void {
@@ -126,6 +139,10 @@ export class SpawnPanel {
     const aircraftId =
       (this.element.querySelector('#spawn-aircraft') as HTMLSelectElement).value || 'cessna172';
     const def = getAircraftDefinition(aircraftId);
+    if (def.category === 'helicopter') {
+      el.textContent = 'Hover: raise collective (↑) through ~60%';
+      return;
+    }
     let rotateMs = def.rotateSpeedMs ?? DEFAULT_ROTATE_MS;
 
     if (aircraftId === 'twinOtter' && def.weightProfiles?.length) {

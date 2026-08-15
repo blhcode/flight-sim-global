@@ -78,6 +78,7 @@ export class Game {
         gearDown: true,
         engineOn: true,
         enginePower: 1,
+        vehicleKind: 'airplane',
         alphaDeg: 0,
         onGround: true,
         stallWarning: false,
@@ -266,8 +267,12 @@ export class Game {
       if (this.input.wasPressed('KeyP')) {
         const course = this.navMap.getDesiredHeading();
         const telemPeek = this.aircraft.getTelemetry();
+        const heli = this.aircraft.definition.category === 'helicopter';
         const canArm =
-          course != null && !telemPeek.onGround && telemPeek.altitudeFt * 0.3048 > 20;
+          !heli &&
+          course != null &&
+          !telemPeek.onGround &&
+          telemPeek.altitudeFt * 0.3048 > 20;
         this.autopilot.toggle(canArm, telemPeek.pitchDeg);
       }
 

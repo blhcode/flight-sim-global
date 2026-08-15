@@ -11,7 +11,9 @@ export interface ControlSurfaceInputs {
   gearDown: boolean;
 }
 
-export type EngineType = 'prop' | 'turboprop' | 'jet';
+export type EngineType = 'prop' | 'turboprop' | 'jet' | 'heli';
+
+export type VehicleCategory = 'airplane' | 'helicopter';
 
 /** Optional takeoff weight preset — overrides mass and sometimes V-speeds. */
 export interface WeightProfile {
@@ -28,6 +30,8 @@ export interface AircraftDefinition {
   modelUrl: string | null;
   proceduralModelId: ProceduralModelId;
   engineType: EngineType;
+  /** Defaults to airplane. Helicopters use collective / cyclic physics. */
+  category?: VehicleCategory;
   massKg: number;
   wingAreaM2: number;
   wingSpanM: number;
@@ -70,6 +74,7 @@ export interface FlightTelemetry {
   engineOn: boolean;
   /** 0–1 spool (thrust / sound follow this). */
   enginePower: number;
+  vehicleKind: VehicleCategory;
   alphaDeg: number;
   onGround: boolean;
   stallWarning: boolean;

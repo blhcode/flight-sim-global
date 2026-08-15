@@ -135,13 +135,16 @@ export function drawStatusBar(
   ctx.fillStyle = '#e8f0ff';
   ctx.font = '12px system-ui';
   ctx.textAlign = 'left';
+  const heli = t.vehicleKind === 'helicopter';
   const gear = t.gearDown ? 'DN' : 'UP';
   const flaps = t.flaps > 0 ? 'FULL' : 'UP';
   let eng = 'OFF';
   if (t.engineOn && t.enginePower >= 0.97) eng = 'ON';
   else if (t.engineOn) eng = 'START';
   else if (t.enginePower > 0.03) eng = 'STOP';
-  const prefix = `THR ${(t.throttle * 100).toFixed(0)}%  IAS ${t.airspeedKts.toFixed(0)}kt  FLAPS ${flaps}  GEAR ${gear}  ENG ${eng}  ${t.onGround ? 'GND' : 'AIR'}  α ${t.alphaDeg.toFixed(0)}°`;
+  const prefix = heli
+    ? `COL ${(t.throttle * 100).toFixed(0)}%  IAS ${t.airspeedKts.toFixed(0)}kt  SKIDS  ENG ${eng}  ${t.onGround ? 'GND' : 'AIR'}`
+    : `THR ${(t.throttle * 100).toFixed(0)}%  IAS ${t.airspeedKts.toFixed(0)}kt  FLAPS ${flaps}  GEAR ${gear}  ENG ${eng}  ${t.onGround ? 'GND' : 'AIR'}  α ${t.alphaDeg.toFixed(0)}°`;
   ctx.fillText(prefix, 12, 18);
   let cursorX = 12 + ctx.measureText(prefix).width;
   if (!t.engineOn && t.enginePower < 0.03) {

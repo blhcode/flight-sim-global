@@ -1,6 +1,7 @@
 import * as THREE from 'three';
 import type { ProceduralModelId } from './types.ts';
 import { createProceduralCessna172 } from '../ProceduralCessna172.ts';
+import { createProceduralR22 } from '../ProceduralR22.ts';
 
 function addSurfaces(
   root: THREE.Group,
@@ -313,5 +314,7 @@ export function createProceduralAircraft(id: ProceduralModelId): THREE.Group {
       return createB737();
     case 'b747':
       return createB747();
+    case 'r22':
+      return createProceduralR22();
   }
 }

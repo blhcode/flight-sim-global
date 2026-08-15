@@ -1,6 +1,7 @@
 import * as THREE from 'three';
 import type { AircraftDefinition, WeightProfile } from '../aircraft/types.ts';
 import { SimpleFlightModel } from '../physics/SimpleFlightModel.ts';
+import { HelicopterFlightModel } from '../physics/HelicopterFlightModel.ts';
 import type { SimControls } from '../physics/forces/GroundContact.ts';
 import { loadAircraftModel } from '../rendering/ModelLoader.ts';
 import { setLandingGearVisible } from '../rendering/landingGear.ts';
@@ -9,7 +10,7 @@ import { M_TO_FT, MS_TO_KTS, type FlightTelemetry } from './types.ts';
 export class AircraftInstance {
   readonly root = new THREE.Group();
   readonly definition: AircraftDefinition;
-  body: SimpleFlightModel | null = null;
+  body: SimpleFlightModel | HelicopterFlightModel | null = null;
   model: THREE.Object3D | null = null;
 
   controls: SimControls = {
@@ -94,7 +95,10 @@ export class AircraftInstance {
 
   respawnAt(worldPos: THREE.Vector3, headingDeg: number): void {
     if (!this.body) {
-      this.body = new SimpleFlightModel(worldPos, headingDeg);
+      this.body =
+        this.definition.category === 'helicopter'
+          ? new HelicopterFlightModel(worldPos, headingDeg)
+          : new SimpleFlightModel(worldPos, headingDeg);
     } else {
       this.body.state.position.copy(worldPos);
       this.body.state.quaternion.setFromEuler(
@@ -172,7 +176,7 @@ export class AircraftInstance {
       gearDown: this.gearDown,
     }, dt);
 
-    setLandingGearVisible(this.model, this.gearDown);
+    setLandingGearVisible(this.model, this.definition.category === 'helicopter' ? true : this.gearDown);
   }
 
   getTelemetry(): FlightTelemetry {
@@ -190,6 +194,7 @@ export class AircraftInstance {
         gearDown: this.gearDown,
         engineOn: this.engineOn,
         enginePower: this.enginePower,
+        vehicleKind: this.definition.category === 'helicopter' ? 'helicopter' : 'airplane',
         alphaDeg: 0,
         onGround: true,
         stallWarning: false,
@@ -209,6 +214,7 @@ export class AircraftInstance {
       gearDown: this.gearDown,
       engineOn: this.engineOn,
       enginePower: this.enginePower,
+      vehicleKind: this.definition.category === 'helicopter' ? 'helicopter' : 'airplane',
       alphaDeg: b.alphaDeg,
       onGround: this.onGround,
       stallWarning: b.stallWarning,

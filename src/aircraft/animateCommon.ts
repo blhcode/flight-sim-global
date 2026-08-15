@@ -21,7 +21,9 @@ export function spinNamedPropellers(
 ): void {
   const speed = base + throttle * range;
   model.traverse((child) => {
-    if (!names.includes(child.name) && !child.userData.isPropeller) return;
+    const match =
+      names.length > 0 ? names.includes(child.name) : Boolean(child.userData.isPropeller);
+    if (!match) return;
     const axis = (child.userData.propAxis as 'x' | 'y' | 'z' | undefined) ?? 'z';
     child.rotation[axis] += dt * speed;
   });

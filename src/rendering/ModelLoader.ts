@@ -4,7 +4,7 @@ import { GLTFLoader } from 'three/examples/jsm/loaders/GLTFLoader.js';
 import type { AircraftDefinition } from '../aircraft/types.ts';
 import { createProceduralAircraft } from './procedural/Fleet.ts';
 import { setLandingGearVisible, setupLandingGear } from './landingGear.ts';
-import { setupPropellers } from './propellers.ts';
+import { setupPropellers, setupR22Rotors } from './propellers.ts';
 
 interface NormalizeOptions {
   preRotation?: THREE.Euler;
@@ -184,6 +184,10 @@ function gltfNormalizeOptions(aircraftId: string): NormalizeOptions {
       wingspanAxis: 'x',
     };
   }
+  // FGAddon R22: Y-up after AC3D convert, nose −X → yaw so nose is −Z.
+  if (aircraftId === 'r22') {
+    return { yawRad: -Math.PI / 2, wingspanAxis: 'auto' };
+  }
   return { yawRad: 0, wingspanAxis: 'x' };
 }
 
@@ -197,6 +201,9 @@ function prepareLoadedGltf(
     cleanupCessnaTieDown(root);
   }
   fixImportedMaterials(root);
+  if (aircraftId === 'r22') {
+    setupR22Rotors(root);
+  }
 
   enableShadows(root);
 
@@ -206,6 +213,22 @@ function prepareLoadedGltf(
   setLandingGearVisible(root, true);
   setupPropellers(root, aircraftId, box);
   const mounts = cameraMountsFromBounds(box);
+
+  if (aircraftId === 'r22') {
+    return {
+      root,
+      mixer: null,
+      cameraMounts: {
+        cockpit: new THREE.Vector3(0.22, 1.05, -0.88),
+        cockpitLook: new THREE.Vector3(0.22, 0.95, -10),
+        gear: new THREE.Vector3(-2.6, 0.4, 2.4),
+        gearLook: new THREE.Vector3(0, 0.7, -1.2),
+        outside: new THREE.Vector3(0, 4.8, 11),
+        chase: new THREE.Vector3(0, 3.2, 9),
+      },
+      gearOffsetM: 0.2,
+    };
+  }
 
   return {
     root,
@@ -235,19 +258,29 @@ function prepareProcedural(
   setLandingGearVisible(model, true);
   setupPropellers(model, proceduralModelId, box);
   const mounts = cameraMountsFromBounds(box);
+  const heli = proceduralModelId === 'r22';
 
   return {
     root: model,
     mixer: null,
-    cameraMounts: {
-      cockpit: mounts.cockpit,
-      cockpitLook: mounts.cockpitLook,
-      gear: mounts.gear,
-      gearLook: mounts.gearLook,
-      outside: mounts.outside,
-      chase: mounts.chase,
-    },
-    gearOffsetM: mounts.gearOffsetM,
+    cameraMounts: heli
+      ? {
+          cockpit: new THREE.Vector3(0.28, 1.12, -0.55),
+          cockpitLook: new THREE.Vector3(0.28, 1.02, -10),
+          gear: new THREE.Vector3(-2.4, 0.35, 2.2),
+          gearLook: new THREE.Vector3(0, 0.55, -1.2),
+          outside: new THREE.Vector3(0, 5.2, 12),
+          chase: new THREE.Vector3(0, 3.6, 10),
+        }
+      : {
+          cockpit: mounts.cockpit,
+          cockpitLook: mounts.cockpitLook,
+          gear: mounts.gear,
+          gearLook: mounts.gearLook,
+          outside: mounts.outside,
+          chase: mounts.chase,
+        },
+    gearOffsetM: heli ? 0.38 : mounts.gearOffsetM,
   };
 }
 
