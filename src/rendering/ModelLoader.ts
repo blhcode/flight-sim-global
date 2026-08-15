@@ -202,7 +202,7 @@ function prepareLoadedGltf(
 
   const normalizeOptions = gltfNormalizeOptions(aircraftId);
   const box = normalizeToGround(root, wingSpanM, normalizeOptions);
-  setupLandingGear(root, aircraftId);
+  const gearDropM = setupLandingGear(root, aircraftId);
   setLandingGearVisible(root, true);
   setupPropellers(root, aircraftId, box);
   const mounts = cameraMountsFromBounds(box);
@@ -218,7 +218,9 @@ function prepareLoadedGltf(
       outside: mounts.outside,
       chase: mounts.chase,
     },
-    gearOffsetM: mounts.gearOffsetM,
+    // Gear that hangs below the airframe sets ride height, so the wheels
+    // touch the runway instead of the model floating above it.
+    gearOffsetM: gearDropM > 0 ? gearDropM : mounts.gearOffsetM,
   };
 }
 

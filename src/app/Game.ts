@@ -187,7 +187,10 @@ export class Game {
           void this.terrain
             .onViewChanged(this.aircraft.root.position, this.sceneManager.camera)
             .then(async () => {
-              this.terrainHq = this.terrain.isBestQuality();
+              const pos = this.aircraft?.root.position;
+              this.terrainHq = pos
+                ? this.terrain.isBestQuality(pos)
+                : this.terrain.isBestQuality();
               if (this.terrainHq) {
                 this.loadingScreen.setMessage('Best quality terrain ready');
                 this.loadingScreen.setProgress(1);
@@ -336,7 +339,7 @@ export class Game {
           const gy = this.terrain.sampleHeightAt(focus);
           const targetZ = satelliteBestQualityMinZ();
           void this.terrain.waitForTileDetail(focus, gy, targetZ, 30_000).then((r) => {
-            this.terrainHq = r.ready || this.terrain.isBestQuality();
+            this.terrainHq = r.ready || this.terrain.isBestQuality(focus);
             this.terrain.setUpdateInterval(16);
           });
         }
@@ -353,12 +356,11 @@ export class Game {
       this.navMap.updatePlayer(geo.lat, geo.lon, telem.headingDeg);
       const courseDeg = this.navMap.getDesiredHeading();
 
-      if (!this.terrainHq) {
+      if (this.hqCheckCooldown <= 0) {
+        this.hqCheckCooldown = 45;
+        this.terrainHq = this.terrain.isBestQuality(this.aircraft.root.position, 2_200);
+      } else {
         this.hqCheckCooldown--;
-        if (this.hqCheckCooldown <= 0) {
-          this.hqCheckCooldown = 45;
-          this.terrainHq = this.terrain.isBestQuality();
-        }
       }
 
       this.hud.canvas.style.opacity = '1';
@@ -420,7 +422,8 @@ export class Game {
   /** Test / automation — loading finished, sim running, and satellite detail is present. */
   isFlightReady(): boolean {
     if (this.phase !== 'flying' || !this.aircraft?.body) return false;
-    return this.terrainHq || this.terrain.isBestQuality();
+    const pos = this.aircraft.root.position;
+    return this.terrainHq || this.terrain.isBestQuality(pos);
   }
 
   /** Test / automation — nose pitch & bank from body quaternion (gimbal-safe). */
@@ -477,7 +480,7 @@ export class Game {
         this.aircraft.root.position,
         this.sceneManager.camera,
       );
-      this.terrainHq = this.terrain.isBestQuality();
+      this.terrainHq = this.terrain.isBestQuality(this.aircraft.root.position);
     }
   }
 

@@ -118,19 +118,19 @@ export function currentSatelliteProviderName(): SatelliteProvider {
 
 /** LOD during normal flight — must stay high or tiles merge after spawn prime. */
 export function satelliteLodThreshold(): number {
-  return satelliteProvider() === 'google' ? 4.5 : 3.5;
+  return satelliteProvider() === 'google' ? 4.5 : 4.2;
 }
 
 /** LOD while priming — higher = finer tiles (three-tile: recommended 1–2, we push harder at spawn). */
 export function satellitePrimeLodThreshold(): number {
-  return satelliteProvider() === 'google' ? 6.0 : 4.5;
+  return satelliteProvider() === 'google' ? 6.0 : 4.8;
 }
 
 /** Parallel tile downloads. three-tile skips LOD when downloadingThreads+4 >= maxThreads. */
 export function satelliteMaxThreads(priming = false): number {
   // Modest concurrency — flood the Google mirror and requests hang with zero progress.
   if (satelliteProvider() === 'google') return priming ? 24 : 16;
-  return priming ? 20 : 14;
+  return priming ? 22 : 18;
 }
 
 /** Zoom level that counts as sharp runway / low-altitude scenery for the active provider. */

@@ -33,7 +33,7 @@ const tests = [
   { id: 'cessna172', file: 'cessna-172sp/scene.glb', wing: 11, minWheels: 2, maxX: 6, minStrut: 0.05, yaw: Math.PI, nativeGear: true },
   { id: 'b737', file: 'b737-800/scene.glb', wing: 35.8, minWheels: 3, maxX: 4, minStrut: 0.4, wingspanAxis: 'x' },
   { id: 'dash8400', file: 'dash8-q400/scene.glb', wing: 28.4, minWheels: 3, maxX: 5, minStrut: 0.5, wingspanAxis: 'x' },
-  { id: 'b747', file: 'b747-400/scene.glb', wing: 64.4, minWheels: 8, maxX: 14, minStrut: 0.4, wingspanAxis: 'x' },
+  { id: 'b747', file: 'b747-400/scene.glb', wing: 64.4, minWheels: 8, maxX: 8, minStrut: 2.8, wingspanAxis: 'x' },
   {
     id: 'twinOtter',
     file: 'twin-otter/scene.glb',

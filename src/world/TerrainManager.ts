@@ -70,6 +70,12 @@ export class TerrainManager {
   private readonly scene: THREE.Scene;
   /** Pre-offset spawn position in map space (used only to position the group). */
   readonly origin = new THREE.Vector3();
+  /**
+   * Cumulative horizontal shift applied to keep aircraft coords near zero.
+   * Map/tile space = local scene position + sceneOrigin.
+   */
+  private readonly sceneOrigin = new THREE.Vector3();
+  private readonly _mapPosScratch = new THREE.Vector3();
 
   constructor(scene: THREE.Scene) {
     this.scene = scene;
@@ -130,6 +136,9 @@ export class TerrainManager {
 
     this.spawn = location;
     this.spawnGroundElevM = 0;
+    this._hasPrimeAnchor = false;
+    this._recenterBoost = 0;
+    this.sceneOrigin.set(0, 0, 0);
     this.map = tt.TileMap.create({
       imgSource: createImagerySources(this.textureMode, maxLevel),
       demSource: createDemSource(maxLevel),
@@ -224,7 +233,7 @@ export class TerrainManager {
       this.forceMapUpdate(primeCam);
       await new Promise((r) => setTimeout(r, 100));
 
-      stats = this.collectImageryStats(minZ);
+      stats = this.collectImageryStats(minZ, focus, 1_200);
       maxZ = stats.maxZ;
       ready = this.imageryReady(minZ, stats);
       onProgress?.({ maxZ, targetZ: minZ, ready, stats });
@@ -250,9 +259,9 @@ export class TerrainManager {
   }
 
   /** True when near-aircraft satellite tiles meet best-quality zoom for the active provider. */
-  isBestQuality(): boolean {
+  isBestQuality(focus?: THREE.Vector3, radiusM = 2_500): boolean {
     const minZ = satelliteBestQualityMinZ();
-    return this.imageryReady(minZ, this.collectImageryStats(minZ));
+    return this.imageryReady(minZ, this.collectImageryStats(minZ, focus, radiusM));
   }
 
   /** Keep satellite downloads moving while other assets load. */
@@ -265,11 +274,15 @@ export class TerrainManager {
     this.map.update(this.lodCamera);
   }
 
-  imageryStats(minZ = 10): ImageryStats {
-    return this.collectImageryStats(minZ);
+  imageryStats(minZ = 10, focus?: THREE.Vector3, radiusM = 0): ImageryStats {
+    return this.collectImageryStats(minZ, focus, radiusM);
   }
 
-  private collectImageryStats(minZ: number): ImageryStats {
+  private collectImageryStats(
+    minZ: number,
+    focus?: THREE.Vector3,
+    radiusM = 0,
+  ): ImageryStats {
     const stats: ImageryStats = {
       maxZ: 0,
       meshes: 0,
@@ -280,9 +293,20 @@ export class TerrainManager {
     };
     if (!this.map) return stats;
 
+    const r2 = radiusM > 0 && focus ? radiusM * radiusM : 0;
+    const tmp = new THREE.Vector3();
+
     this.map.traverse((o) => {
       const parent = o.parent as { z?: number } | null;
       if (!(o as THREE.Mesh).isMesh || parent?.z == null) return;
+
+      if (r2 > 0 && focus) {
+        o.getWorldPosition(tmp);
+        const dx = tmp.x - focus.x;
+        const dz = tmp.z - focus.z;
+        if (dx * dx + dz * dz > r2) return;
+      }
+
       stats.meshes++;
       if (parent.z > stats.maxZ) stats.maxZ = parent.z;
 
@@ -432,9 +456,15 @@ export class TerrainManager {
 
     // Horizontal only — shifting Y corrupts DEM heights after flying at altitude.
     const shift = new THREE.Vector3(dx, 0, dz);
+    this.sceneOrigin.add(shift);
     this.group.position.sub(shift);
     this._primePending = true;
     return shift;
+  }
+
+  /** Local scene position → three-tile map coordinates (stable across recenters). */
+  private toMapPosition(localPos: THREE.Vector3, out = this._mapPosScratch): THREE.Vector3 {
+    return out.copy(localPos).add(this.sceneOrigin);
   }
 
   /** Load high-zoom imagery around a map-local focus point (after recenter / long jump). */
@@ -558,7 +588,7 @@ export class TerrainManager {
         altM: localPos.y,
       };
     }
-    const geo = this.map.world2geo(localPos.clone());
+    const geo = this.map.world2geo(this.toMapPosition(localPos));
     return { lat: geo.y, lon: geo.x, altM: geo.z };
   }
 
@@ -577,9 +607,13 @@ export class TerrainManager {
     const lodCam = this.lodCameraFor(camera, focus, motion);
     this.map.update(lodCam);
 
-  if (motion && motion.velocity.length() > 35) {
+    if (motion && motion.velocity.length() > 35) {
       const lead = this.lodCameraFor(camera, focus, motion, 1);
       this.map.update(lead);
+    }
+
+    if (focus) {
+      this.maybePrimeAlongPath(focus, motion?.aglM ?? 0);
     }
 
     if (this._recenterBoost > 0) {
@@ -590,12 +624,41 @@ export class TerrainManager {
     }
   }
 
+  /** Soft reprime every ~900 m so scenery stays sharp away from spawn. */
+  private maybePrimeAlongPath(focus: THREE.Vector3, aglM: number): void {
+    if (!this.map) return;
+    if (!this._hasPrimeAnchor) {
+      this._lastPrimeX = focus.x;
+      this._lastPrimeZ = focus.z;
+      this._hasPrimeAnchor = true;
+      return;
+    }
+    const dx = focus.x - this._lastPrimeX;
+    const dz = focus.z - this._lastPrimeZ;
+    if (dx * dx + dz * dz < this.primeEveryM ** 2) return;
+    this._lastPrimeX = focus.x;
+    this._lastPrimeZ = focus.z;
+
+    // High-altitude cruise doesn't need nadir z16 under the aircraft.
+    if (aglM > 900) return;
+
+    const y = this.sampleHeightAt(focus);
+    this._recenterBoost = Math.max(this._recenterBoost, 45);
+    this._normalUpdateInterval = this.map.updateInterval;
+    this.map.updateInterval = 0;
+    void this.refreshImageryLod(focus);
+    void this.primeImageryAt(focus, y);
+  }
+
   /** Aggressive tile refresh after origin shift (prevents the forward "cliff"). */
   onRecenter(focus: THREE.Vector3): void {
     if (!this.map) return;
     this._recenterBoost = 120;
     this._normalUpdateInterval = this.map.updateInterval;
     this.map.updateInterval = 0;
+    this._lastPrimeX = focus.x;
+    this._lastPrimeZ = focus.z;
+    this._hasPrimeAnchor = true;
     const y = this.sampleHeightAt(focus);
     void this.refreshImageryLod(focus);
     void this.primeImageryAt(focus, y);
@@ -603,6 +666,10 @@ export class TerrainManager {
 
   private _recenterBoost = 0;
   private _normalUpdateInterval = 16;
+  private _lastPrimeX = 0;
+  private _lastPrimeZ = 0;
+  private _hasPrimeAnchor = false;
+  private readonly primeEveryM = 900;
 
   private readonly lodCamera = new THREE.PerspectiveCamera(60, 1, 0.5, 500_000);
   private readonly _lodLook = new THREE.Vector3();
@@ -616,7 +683,11 @@ export class TerrainManager {
     if (!focus) return viewCamera;
     const groundY = this.sampleHeightAt(focus);
     const agl = Math.max(0, motion?.aglM ?? 0);
-    const camH = groundY + Math.max(0.5, Math.min(agl, 1200));
+    // Cap LOD camera height — a 1200 m camera collapses tiles to soft mid-zoom.
+    // Low AGL / pattern flying needs near-nadir for sharp satellite.
+    const lodAgl =
+      agl < 80 ? Math.max(4, agl) : agl < 250 ? Math.min(agl, 120) : Math.min(agl, 380);
+    const camH = groundY + lodAgl;
 
     let lx = focus.x;
     let lz = focus.z;
@@ -626,7 +697,7 @@ export class TerrainManager {
       const hz = vel.z;
       const hlen = Math.hypot(hx, hz);
       if (hlen > 8) {
-        const lead = Math.min(3200, hlen * 7) * leadScale;
+        const lead = Math.min(2200, hlen * 5.5) * leadScale;
         lx += (hx / hlen) * lead;
         lz += (hz / hlen) * lead;
       }
@@ -642,14 +713,17 @@ export class TerrainManager {
   /** Geographic → scene coordinates (group offset keeps values near the spawn). */
   geoToLocal(lat: number, lon: number, altM: number): THREE.Vector3 {
     if (!this.map) return new THREE.Vector3();
-    return this.map.geo2world(new THREE.Vector3(lon, lat, altM));
+    return this.map
+      .geo2world(new THREE.Vector3(lon, lat, altM))
+      .clone()
+      .sub(this.sceneOrigin);
   }
 
   sampleHeightAt(localPos: THREE.Vector3): number {
     if (!this.map) return this.spawnLocalGroundY;
     const raw = this.sampleHeightAtRaw(localPos);
     if (this.spawn && this.spawnGroundElevM > 0) {
-      const geo = this.map.world2geo(localPos.clone());
+      const geo = this.map.world2geo(this.toMapPosition(localPos));
       const dist = this.approxDistM(geo.y, geo.x, this.spawn.lat, this.spawn.lon);
       if (dist < 900) {
         if (raw === 0 || Math.abs(raw) < 0.5) return this.spawnGroundElevM;
@@ -668,7 +742,8 @@ export class TerrainManager {
 
   private sampleHeightAtRaw(localPos: THREE.Vector3): number {
     if (!this.map) return 0;
-    const geo = this.map.world2geo(localPos.clone());
+    const mapPos = this.toMapPosition(localPos);
+    const geo = this.map.world2geo(mapPos);
     const info = this.map.getLocalInfoFromGeo(geo);
     if (info?.point) {
       const y = info.point.y;
